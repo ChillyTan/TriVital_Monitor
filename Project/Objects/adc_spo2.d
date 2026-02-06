@@ -1,0 +1,22 @@
+.\objects\adc_spo2.o: ..\HW\ADC_SPO2\ADC_SPO2.c
+.\objects\adc_spo2.o: ..\HW\ADC_SPO2\ADC_SPO2.h
+.\objects\adc_spo2.o: ..\App\DataType\DataType.h
+.\objects\adc_spo2.o: ..\ARM\System\stm32f10x_conf.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_adc.h
+.\objects\adc_spo2.o: ..\ARM\System\stm32f10x.h
+.\objects\adc_spo2.o: ..\ARM\System\core_cm3.h
+.\objects\adc_spo2.o: D:\Program Files (x86)\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\adc_spo2.o: ..\ARM\System\system_stm32f10x.h
+.\objects\adc_spo2.o: ..\ARM\System\stm32f10x_conf.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_dac.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_dbgmcu.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_dma.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_exti.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_flash.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_gpio.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_iwdg.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_rcc.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_tim.h
+.\objects\adc_spo2.o: ..\FW\inc\stm32f10x_usart.h
+.\objects\adc_spo2.o: ..\FW\inc\misc.h
+.\objects\adc_spo2.o: ..\HW\ADC\U16Queue.h
