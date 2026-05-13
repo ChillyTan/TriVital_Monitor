@@ -43,9 +43,8 @@
 
 /* 滤波参数 */
 #define N 2							// IIR滤波器阶数
-#define SMOOTH_LEN 5		// 滑动均值滤波窗口长度
+#define SMOOTH_LEN 10		// 滑动均值滤波窗口长度
 #define SP_WAVE_LEN 300 // SPO2波形分析窗口长度（≈5s）
-#define HR_AVG_N 5			// 脉率平均窗口
 #define R_BUFSIZE 5			// R值中值滤波缓冲长度
 
 /* 自动调光参数 */
@@ -85,9 +84,7 @@ static int SPO2_Wave_index = 0;
 static double peakThreshold = 0;
 static int lastPeak_index = 0;
 static int currentPeak_index = 0;
-static int heartRate = 0;
-static int hr_buf[HR_AVG_N] = {0};
-static int hr_cnt = 0;
+static int pulseRate = 0;
 
 // 血氧饱和度计算
 static double arr_SPO2_Wave_RED[SP_WAVE_LEN] = {0};
@@ -98,9 +95,12 @@ static double value_R = 0;
 static double value_SPO2 = 0;
 static int rValue_buf[R_BUFSIZE] = {0};
 
-// 血氧调光 导联检测
+// 血氧调光
 static u16 s_DACdata = 0;
 static int adjust_wait_cnt = 0; // 调光后等待计数
+
+// 导联检测
+static u8 s_SPO2_Connected = 0;	//0-导联脱落 1-导联正常
 
 /*********************************************************************************************************
  *                                              内部函数声明
@@ -282,7 +282,6 @@ static void Analyze_SPO2Wave(double *wave1, double *wave2, double *wave3, int wa
 			wave1_min = wave1[i];
 		if (wave1[i] > wave1_max)
 			wave1_max = wave1[i];
-
 		// 计算波形2的峰峰值
 		if (wave2[i] < wave2_min)
 			wave2_min = wave2[i];
@@ -310,7 +309,39 @@ static void Analyze_SPO2Wave(double *wave1, double *wave2, double *wave3, int wa
  *********************************************************************************************************/
 static void calRate(double ppdistance, int *rate_output)
 {
-	*rate_output = (int)((double)((60000.0 / (ppdistance))));
+	static int arrRates[5] = {0};
+  static int idx = 0;
+  static int count = 0;
+  int temp[5];
+  int i, j;
+  int currentRate;
+
+  currentRate = (int)(60000.0 / ppdistance);
+  arrRates[idx] = currentRate;
+  idx = (idx + 1) % 5;
+  
+  if(count < 5) count++;
+
+  for(i = 0; i < count; i++)
+  {
+    temp[i] = arrRates[i];
+  }
+
+  for(i = 0; i < count - 1; i++)
+  {
+    for(j = 0; j < count - 1 - i; j++)
+    {
+      if(temp[j] > temp[j + 1])
+      {
+        int t = temp[j];
+        temp[j] = temp[j + 1];
+        temp[j + 1] = t;
+      }
+    }
+  }
+
+  // 取中位数
+  *rate_output = temp[2];
 }
 
 /*********************************************************************************************************
@@ -573,6 +604,7 @@ void SPO2_LED_Task(void) // 每1ms执行一次
 		break;
 	}
 }
+
 /*********************************************************************************************************
  * 函数名称：SPO2Task
  * 函数功能：血氧模块顶层任务
@@ -582,14 +614,11 @@ void SPO2_LED_Task(void) // 每1ms执行一次
  * 创建日期：2018年01月01日
  * 注    意：
  *********************************************************************************************************/
-void SPO2Task() // 每8ms执行一次
+int  SPO2Task(void) // 每8ms执行一次
 {
 	double output0[2] = {0};
 	double output1[2] = {0};
 	double output2[2] = {0};
-	int cur_hr = 0;
-	int hr_sum = 0;
-	int i;
 
 	// 用于计算血氧饱和度的波形
 	output0[0] = IIRHighpass(SPO2_Wave_data_RED, IIRHighpass_win_RED);
@@ -598,8 +627,8 @@ void SPO2Task() // 每8ms执行一次
 	output1[1] = IIRLowpass(output0[1], IIRLowpass_win_IR);
 	output2[0] = SmoothingFilter_RED(output1[0]);
 	output2[1] = SmoothingFilter_IR(output1[1]);
-	// 用于计算脉率的波形
 
+	// 用于计算血氧饱和度和脉率的波形
 	arr_SPO2_Wave_RED[SPO2_Wave_index] = output2[0];
 	arr_SPO2_Wave_IR[SPO2_Wave_index] = output2[1];
 	arr_SPO2_Wave_Rate[SPO2_Wave_index] = output2[1];
@@ -614,65 +643,86 @@ void SPO2Task() // 每8ms执行一次
 		if (adjust_wait_cnt > 0)
 		{
 			adjust_wait_cnt--;
-			return;
 		}
-
-		// 分析
-		Analyze_SPO2Wave(arr_SPO2_Wave_RED, arr_SPO2_Wave_IR, arr_SPO2_Wave_Rate, SP_WAVE_LEN, &peak2peak_RED, &peak2peak_IR);
-		calSpO2(peak2peak_RED, peak2peak_IR, &value_R, &value_SPO2);
-		// 自动调光
-		if (peak2peak_RED < 20 && s_DACdata < RED_INTENSITY_MAX)
+		else
 		{
-			s_DACdata += RED_INTENSITY_STEP;
-			if (s_DACdata > RED_INTENSITY_MAX)
+			// 分析
+			Analyze_SPO2Wave(arr_SPO2_Wave_RED, arr_SPO2_Wave_IR, arr_SPO2_Wave_Rate, SP_WAVE_LEN, &peak2peak_RED, &peak2peak_IR);
+			calSpO2(peak2peak_RED, peak2peak_IR, &value_R, &value_SPO2);
+			// 导联检测
+			if (peak2peak_RED > 20 && peak2peak_IR > 20)
 			{
-				s_DACdata = RED_INTENSITY_MAX;
-			}
-			AdjustDAC(s_DACdata);
-			adjust_wait_cnt = ADJUST_STABLE_DELAY; // 调光后等待
-		}
-		else if (peak2peak_RED > 80 && s_DACdata > RED_INTENSITY_MIN)
-		{
-			s_DACdata -= RED_INTENSITY_STEP;
-			if (s_DACdata < RED_INTENSITY_MIN)
-			{
-				s_DACdata = RED_INTENSITY_MIN;
-			}
-			AdjustDAC(s_DACdata);
-			adjust_wait_cnt = ADJUST_STABLE_DELAY; // 调光后等待
-		}
-	}
-
-	// 实时检测R波
-	if ((SPO2_Wave_index > 1) && (SPO2_Wave_index < SP_WAVE_LEN - 1))
-	{
-		if ((arr_SPO2_Wave_Rate[SPO2_Wave_index - 2] - peakThreshold >= 0) && ((arr_SPO2_Wave_Rate[SPO2_Wave_index - 1] - peakThreshold) <= 0))
-		{
-			// printf("%d ", 0);
-			currentPeak_index = GetTimeCounter();
-			calRate(currentPeak_index - lastPeak_index, &cur_hr);
-			lastPeak_index = currentPeak_index;
-			if (hr_cnt <= 4)
-			{
-				hr_buf[hr_cnt] = cur_hr;
-				hr_cnt++;
+				s_SPO2_Connected = 1;
 			}
 			else
 			{
-				for (i = 0; i < 5; i++)
+				s_SPO2_Connected = 0;
+			}
+			// 自动调光
+			if (peak2peak_RED < 20 && s_DACdata < RED_INTENSITY_MAX)
+			{
+				s_DACdata += RED_INTENSITY_STEP;
+				if (s_DACdata > RED_INTENSITY_MAX)
 				{
-					hr_sum += hr_buf[i];
+					s_DACdata = RED_INTENSITY_MAX;
 				}
-				heartRate = hr_sum / 5;
-				hr_cnt = 0;
+				AdjustDAC(s_DACdata);
+				adjust_wait_cnt = ADJUST_STABLE_DELAY; // 调光后等待
+			}
+			else if (peak2peak_RED > 80 && s_DACdata > RED_INTENSITY_MIN)
+			{
+				s_DACdata -= RED_INTENSITY_STEP;
+				if (s_DACdata < RED_INTENSITY_MIN)
+				{
+					s_DACdata = RED_INTENSITY_MIN;
+				}
+				AdjustDAC(s_DACdata);
+				adjust_wait_cnt = ADJUST_STABLE_DELAY; // 调光后等待
 			}
 		}
 	}
 
-	if (g_displayMode == WAVE_SPO2)
+	// 实时检测波峰
+	if ((SPO2_Wave_index > 1) && (SPO2_Wave_index < SP_WAVE_LEN - 1))
 	{
-		printf("%d, %d\r\n", (int)output0[0], (int)output0[1]);
+		if ((arr_SPO2_Wave_Rate[SPO2_Wave_index - 2] - peakThreshold <= 0) && ((arr_SPO2_Wave_Rate[SPO2_Wave_index - 1] - peakThreshold) >= 0))
+		{
+			currentPeak_index = GetTimeCounter();
+			calRate(currentPeak_index - lastPeak_index, &pulseRate);
+			lastPeak_index = currentPeak_index;
+		}
 	}
+
+	return (int)output2[1];
+}
+
+/*********************************************************************************************************
+ * 函数名称：SPO2GetSPO2
+ * 函数功能：获取血氧饱和度
+ * 输入参数：void
+ * 输出参数：void
+ * 返 回 值：void
+ * 创建日期：2018年01月01日
+ * 注    意：
+ *********************************************************************************************************/
+u16   SPO2GetSPO2Value(void)
+{
+	return (u16)value_SPO2;
+}
+
+
+/*********************************************************************************************************
+ * 函数名称：SPO2GetLeadStatus
+ * 函数功能：获取导联状态
+ * 输入参数：void
+ * 输出参数：void
+ * 返 回 值：void
+ * 创建日期：2018年01月01日
+ * 注    意：
+ *********************************************************************************************************/
+u8   SPO2GetLeadStatus(void)
+{
+	return (u8)s_SPO2_Connected;
 }
 
 /*********************************************************************************************************
@@ -686,6 +736,8 @@ void SPO2Task() // 每8ms执行一次
  *********************************************************************************************************/
 void OLED_SPO2(void)
 {
-	printf("[[3,%d]]\r\n", (int)heartRate);
-	printf("[[4,%d]]\r\n", (int)value_SPO2);
+	// printf("[[3,%d]]\r\n", (int)pulseRate);
+	// printf("[[4,%d]]\r\n", (int)value_SPO2);
 }
+
+

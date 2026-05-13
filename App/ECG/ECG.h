@@ -1,6 +1,6 @@
 /*********************************************************************************************************
-* 模块名称：LED.h
-* 摘    要：LED模块
+* 模块名称：ECG.h
+* 摘    要：ECG模块
 * 当前版本：1.0.0
 * 作    者：SZLY(COPYRIGHT 2018 - 2020 SZLY. All rights reserved.)
 * 完成日期：2020年01月01日 
@@ -34,8 +34,10 @@ extern WaveMode_t g_displayMode;
 /*********************************************************************************************************
 *                                              API函数声明
 *********************************************************************************************************/
-void  InitECG(void);        //初始化LED模块
-void  ECGTask(u32 inp);        //控制LED闪烁
-void  OLED_ECG(void);	//OLED显示心电信息
+void  InitECG(void);        //初始化ECG模块
+int   ECGTask(u16 inp);     //ECG实时处理任务
+u16   ECGGetHeartRate(void);   //获取心率
+u8    ECGGetLeadStatus(void); //获取导联状态
+void  OLED_ECG(void);	      //OLED显示心电信息
 
 #endif

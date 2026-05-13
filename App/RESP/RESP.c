@@ -22,8 +22,8 @@
 *                                           宏定义
 *********************************************************************************************************/
 #define N 2               // IIR 滤波器阶数（二阶）
-#define WindowsLen 100    // 平滑滤波窗口长度
-#define BR_WAVE_LEN 1000  // 呼吸波形阈值计算窗口长度
+#define SmoothWindowsLen 200    // 平滑滤波窗口长度
+#define BR_WAVE_LEN 1800  // 呼吸波形阈值计算窗口长度
 
 /*********************************************************************************************************
 *                                           内部变量
@@ -32,16 +32,6 @@
  * IIR 滤波器差分方程：
  * y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
  */
-
-// 50Hz 工频陷波器
-static double IIRNotch_win[N+1] = {0};   // 状态缓存
-static double IIRNotch_b[N+1] = {0.245237275252786, 0.396802246667420, 0.245237275252786};
-static double IIRNotch_a[N+1] = {1.0, 0.396802246667420, -0.509525449494429};
-
-// 二阶 IIR 低通滤波器（10Hz）
-static double IIRLowpass_win[N+1] = {0};
-static double IIRLowpass_b[N+1] = {0.0461318020933129, 0.0922636041866259, 0.0461318020933129};
-static double IIRLowpass_a[N+1] = {1.0, -1.30728502884932, 0.491812237222575};
 
 // 呼吸率计算相关变量
 static double arr_BR_Wave[BR_WAVE_LEN] = {0}; // 呼吸波形缓存
@@ -57,8 +47,6 @@ static double s_peak2peak = 0;
 /*********************************************************************************************************
 *                                           内部函数声明
 *********************************************************************************************************/
-static double IIRNotch(double input, double *arrtemp);      // 陷波滤波器
-static double IIRLowpass(double input, double *arrtemp);   // 低通滤波器
 static double SmoothingFilter(double NewData);              // 平滑滤波
 
 static void Update_Threshold(double *data_window, int windowSize, double *threshold_output); // 阈值更新
@@ -67,87 +55,42 @@ static void calRate(double ppdistance, int *rate_output);   // 呼吸率计算
 /*********************************************************************************************************
 *                                           内部函数实现
 *********************************************************************************************************/
-
-/* 50Hz 陷波滤波器 */
-static double IIRNotch(double input, double *arrtemp)
+/*********************************************************************************************************
+* 函数名称：滑动平均平滑滤波
+* 函数功能：对输入数据进行滑动平均平滑滤波
+* 输入参数：void
+* 输出参数：void
+* 返 回 值：void
+* 创建日期：2026年04月16日
+* 注    意：
+*********************************************************************************************************/
+static double SmoothingFilter(double newData)
 {
-  double output = 0;
-  int i = 0;
+  static double buf[SmoothWindowsLen] = {0};
+  static int idx = 0;
+  static int count = 0;
+  static double sum = 0;
 
-  // 反馈计算
-  arrtemp[0] = input
-             - IIRNotch_a[1] * arrtemp[1]
-             - IIRNotch_a[2] * arrtemp[2];
+  sum -= buf[idx];
+  buf[idx] = newData;
+  sum += newData;
 
-  // 前向计算
-  output = IIRNotch_b[0] * arrtemp[0]
-         + IIRNotch_b[1] * arrtemp[1]
-         + IIRNotch_b[2] * arrtemp[2];
+  idx++;
+  if(idx >= SmoothWindowsLen) idx = 0;
+  if(count < SmoothWindowsLen) count++;
 
-  // 状态左移
-  for(i = N; i > 0; i--)
-  {
-    arrtemp[i] = arrtemp[i - 1];
-  }
-
-  return output;
+  return sum / count;
 }
 
-/* 低通滤波器（抑制高频噪声） */
-static double IIRLowpass(double input, double *arrtemp)
-{
-  double output = 0;
-  int i = 0;
-
-  arrtemp[0] = input
-             - IIRLowpass_a[1] * arrtemp[1]
-             - IIRLowpass_a[2] * arrtemp[2];
-
-  output = IIRLowpass_b[0] * arrtemp[0]
-         + IIRLowpass_b[1] * arrtemp[1]
-         + IIRLowpass_b[2] * arrtemp[2];
-
-  for(i = N; i > 0; i--)
-  {
-    arrtemp[i] = arrtemp[i - 1];
-  }
-
-  return output;
-}
-
-/* 平滑滤波（滑动平均） */
-static double SmoothingFilter(double NewData)
-{
-  int n = 0;
-  int num = 0;
-  static int i = 0;
-  static double buf[WindowsLen] = {0};
-
-  // 缓冲区未满，直接填充
-  if(i < WindowsLen)
-  {
-    buf[i++] = NewData;
-    return NewData;
-  }
-  else
-  {
-    // 左移窗口
-    for(n = 0; n < WindowsLen - 1; n++)
-    {
-      buf[n] = buf[n + 1];
-    }
-    buf[WindowsLen - 1] = NewData;
-
-    // 计算平均值
-    for(n = 0; n < WindowsLen; n++)
-    {
-      num += buf[n];
-    }
-    return (num * 1.0 / WindowsLen);
-  }
-}
-
-/* 更新峰值检测阈值 */
+/*********************************************************************************************************
+* 函数名称：更新峰值检测阈值
+* 函数功能：根据输入数据更新呼吸信号的峰值检测阈值
+* 输入参数：void
+* 输出参数：void
+* 返 回 值：void
+* 创建日期：2026年04月16日
+* 注    意：
+*********************************************************************************************************/
 static void Update_Threshold(double *data_window, int windowSize, double *threshold_output)
 {
   int i;
@@ -164,7 +107,15 @@ static void Update_Threshold(double *data_window, int windowSize, double *thresh
   *threshold_output = peakMax - (peakMax - peakMin) / 4;
 }
 
-/* 根据峰间距计算呼吸率 */
+/*********************************************************************************************************
+* 函数名称：根据峰间距计算呼吸率
+* 函数功能：根据输入的峰间距计算呼吸率（BPM）
+* 输入参数：void
+* 输出参数：void
+* 返 回 值：void
+* 创建日期：2026年04月16日
+* 注    意：
+*********************************************************************************************************/
 static void calRate(double ppdistance, int *rate_output)
 {
   *rate_output = (int)(60000.0 / ppdistance); // ppdistance：ms
@@ -173,13 +124,17 @@ static void calRate(double ppdistance, int *rate_output)
 /*********************************************************************************************************
 *                                           API函数
 *********************************************************************************************************/
-
-/* RESP 模块初始化 */
+/*********************************************************************************************************
+* 函数名称：初始化RESP模块
+* 函数功能：初始化RESP模块
+* 输入参数：void
+* 输出参数：void
+* 返 回 值：void
+* 创建日期：2026年04月16日
+* 注    意：
+*********************************************************************************************************/
 void InitRESP(void)
 {
-  memset(IIRNotch_win, 0, sizeof(IIRNotch_win));
-  memset(IIRLowpass_win, 0, sizeof(IIRLowpass_win));
-
   memset(arr_BR_Wave, 0, sizeof(arr_BR_Wave));
   BR_Wave_index = 0;
   peakThreshold = 0;
@@ -190,20 +145,24 @@ void InitRESP(void)
   s_peak2peak = 0;
 }
 
-/* RESP 实时处理任务（周期调用） */
-void RESPTask(u32 inp)
+/*********************************************************************************************************
+* 函数名称：RESP实时处理任务
+* 函数功能：对输入的ECG信号进行实时处理，包括滤波、阈值更新、峰值检测和呼吸率计算
+* 输入参数：void
+* 输出参数：void
+* 返 回 值：void
+* 创建日期：2026年04月16日
+* 注    意：
+*********************************************************************************************************/
+int RESPTask(u16 inp)
 {
   double output1 = 0;
-  double output2 = 0;
-  double output3 = 0;
 
   // 信号处理链：陷波 → 低通 → 平滑
-  output1 = IIRNotch(inp, IIRNotch_win);
-  output2 = IIRLowpass(output1, IIRLowpass_win);
-  output3 = SmoothingFilter(output2);
+  output1 = SmoothingFilter(inp);
 
   // 保存波形数据
-  arr_BR_Wave[BR_Wave_index++] = output3;
+  arr_BR_Wave[BR_Wave_index++] = output1;
 
   // 波形缓存满，更新阈值
   if(BR_Wave_index >= BR_WAVE_LEN)
@@ -224,14 +183,55 @@ void RESPTask(u32 inp)
     }
   }
 
-  // 调试输出
-  if(g_displayMode == WAVE_RESP)
-  {
-    printf("%d ", (u16)output3);
-  }
+  return (u16)output1;
 }
 
-/* OLED 呼吸信息显示 */
+/*********************************************************************************************************
+* 函数名称：获取呼吸率
+* 函数功能：获取当前呼吸率（BPM）
+* 输入参数：void
+* 输出参数：void
+* 返 回 值：void
+* 创建日期：2026年04月16日
+* 注    意：
+*********************************************************************************************************/
+u16   RESPGetRespRate(void)   //获取呼吸率
+{
+	return (u16)breathRate;
+}
+
+/*********************************************************************************************************
+* 函数名称：获取导联状态
+* 函数功能：根据当前峰峰值判断导联状态
+* 输入参数：void
+* 输出参数：void
+* 返 回 值：void
+* 创建日期：2026年04月16日
+* 注    意：0-导联脱落，1-导联正常
+*********************************************************************************************************/
+u8   RESPGetLeadStatus(void) //获取导联状态
+{
+  u8 leadFlag;
+  if(s_peak2peak < 600 || s_peak2peak > 3000)
+  {
+    leadFlag = 0;
+  }
+  else
+  {
+    leadFlag = 1;
+  }
+  return leadFlag;
+}
+
+/*********************************************************************************************************
+* 函数名称：OLED显示呼吸信息
+* 函数功能：在OLED上显示当前呼吸率（BPM）和导联状态
+* 输入参数：void
+* 输出参数：void
+* 返 回 值：void
+* 创建日期：2026年04月16日
+* 注    意：
+*********************************************************************************************************/
 void OLED_RESP(void)
 {
   OLEDShowString(0, 32, (u8*)"BR:");
@@ -243,7 +243,7 @@ void OLED_RESP(void)
   {
     OLEDShowString(88, 48, (u8*)"Noob");
     OLEDShowString(32, 32, (u8*)"Err");
-    printf("[[2,Err]]\r\n");
+    // printf("[[2,Err]]\r\n");
   }
   else
   {
@@ -253,12 +253,10 @@ void OLED_RESP(void)
     if(breathRate >= 5 && breathRate <= 100)
     {
       OLEDShowNum(32, 32, breathRate, 3, 16);
-      printf("[[2,%d]]\r\n", breathRate);
     }
     else
     {
       OLEDShowString(32, 32, (u8*)"Err");
-      printf("[[2,Err]]\r\n");
     }
   }
 }

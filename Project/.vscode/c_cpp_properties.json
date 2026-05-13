@@ -20,6 +20,9 @@
                 "d:\\Embedded\\STM32\\TriVital-Monitor\\App\\RESP",
                 "d:\\Embedded\\STM32\\TriVital-Monitor\\App\\SPO2",
                 "d:\\Embedded\\STM32\\TriVital-Monitor\\HW\\ADC_SPO2",
+                "d:\\Embedded\\STM32\\TriVital-Monitor\\App\\PackUnpack",
+                "d:\\Embedded\\STM32\\TriVital-Monitor\\App\\ProcHostCmd",
+                "d:\\Embedded\\STM32\\TriVital-Monitor\\App\\SendDataToHost",
                 "d:\\Embedded\\STM32\\TriVital-Monitor\\FW\\src"
             ],
             "defines": [

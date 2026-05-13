@@ -32,3 +32,6 @@
 .\objects\main.o: ..\App\ECG\ECG.h
 .\objects\main.o: ..\App\RESP\RESP.h
 .\objects\main.o: ..\App\SPO2\SPO2.h
+.\objects\main.o: ..\App\PackUnpack\PackUnpack.h
+.\objects\main.o: ..\App\SendDataToHost\SendDataToHost.h
+.\objects\main.o: ..\App\ProcHostCmd\ProcHostCmd.h

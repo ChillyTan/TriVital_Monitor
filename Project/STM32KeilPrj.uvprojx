@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\App\Main;..\App\DataType;..\HW\RCC;..\HW\Timer;..\HW\UART1;..\FW\inc;..\ARM\NVIC;..\ARM\SysTick;..\ARM\System;..\App\LED;..\HW\DAC;..\HW\ADC;..\App\ECG;..\App\OLED;..\App\RESP;..\App\SPO2;..\HW\ADC_SPO2</IncludePath>
+              <IncludePath>..\App\Main;..\App\DataType;..\HW\RCC;..\HW\Timer;..\HW\UART1;..\FW\inc;..\ARM\NVIC;..\ARM\SysTick;..\ARM\System;..\App\LED;..\HW\DAC;..\HW\ADC;..\App\ECG;..\App\OLED;..\App\RESP;..\App\SPO2;..\HW\ADC_SPO2;..\App\PackUnpack;..\App\ProcHostCmd;..\App\SendDataToHost</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -412,6 +412,21 @@
               <FileName>SPO2.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\SPO2\SPO2.c</FilePath>
+            </File>
+            <File>
+              <FileName>PackUnpack.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\PackUnpack\PackUnpack.c</FilePath>
+            </File>
+            <File>
+              <FileName>ProcHostCmd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\ProcHostCmd\ProcHostCmd.c</FilePath>
+            </File>
+            <File>
+              <FileName>SendDataToHost.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\SendDataToHost\SendDataToHost.c</FilePath>
             </File>
           </Files>
         </Group>

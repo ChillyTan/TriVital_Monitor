@@ -26,6 +26,9 @@
 #include "ECG.h"
 #include "RESP.h"
 #include "SPO2.h"
+#include "PackUnpack.h"
+#include "SendDataToHost.h"
+#include "ProcHostCmd.h"
 
 /*********************************************************************************************************
 *                                           全局变量
@@ -47,7 +50,9 @@ static void Proc1SecTask(void);   // 1s 周期任务
 *********************************************************************************************************/
 static void InitSoftware(void)
 {
-
+	InitPackUnpack();				// 初始化数据包打包解包模块
+	InitSendDataToHost();		// 初始化发送数据到主机模块
+	InitProcHostCmd();			// 初始化处理主机指令模块
 }
 
 /*********************************************************************************************************
@@ -78,54 +83,44 @@ static void InitHardware(void)
 *********************************************************************************************************/
 static void Proc2msTask(void)
 {
-    u8  uart1RecData;       // 串口接收到的数据
-    u16 ecg_adcData;        // 心电 ADC 数据
-    u16 resp_adcData;       // 呼吸 ADC 数据
+	static u8 s_iCnt2 = 0;  // 2ms 计数器，用于构造 4ms 周期
+	// 发送给主机的数据包，包含 ECG、RESP、SPO2 波形数据（每个波形数据占 2 字节）
+	static u8 s_waveDataPack[6] = {0, 0, 0, 0, 0, 0};
 
-    static u8 s_iCnt4 = 0;  // 2ms 计数器，用于构造 8ms 周期
+	int ecgWaveData;        // 心电 ADC 数据
+	int respWaveData;       // 呼吸 ADC 数据
+	int spo2WaveData;       // 血氧 ADC 数据
 
-    if (Get2msFlag())
-    {
-			/* 接收串口指令，用于切换显示波形 */
-			if (ReadUART1(&uart1RecData, 1))
-			{
-				printf("receive %d\r\n", uart1RecData);
+	if (Get2msFlag())
+	{
+		/* 每 4ms 执行一次信号处理任务 */
+		if (s_iCnt2 >= 1)
+		{
+			// 获取波形数据
+			ecgWaveData = ECGTask(ReadECGADC());
+			respWaveData = RESPTask(ReadRESPADC());
+			spo2WaveData = SPO2Task();
+			// printf("%d\r\n", spo2WaveData);
+			// 组装波形数据包
+			s_waveDataPack[0] = ecgWaveData >> 8;
+			s_waveDataPack[1] = ecgWaveData & 0xFF;
+			s_waveDataPack[2] = respWaveData >> 8;
+			s_waveDataPack[3] = respWaveData & 0xFF;
+			s_waveDataPack[4] = spo2WaveData >> 8;
+			s_waveDataPack[5] = spo2WaveData & 0xFF;
+			// 发送波形数据包到主机
+			SendWavePackHost(s_waveDataPack);
 
-				switch (uart1RecData)
-				{
-					case WAVE_ECG:
-					case WAVE_RESP:
-					case WAVE_SPO2:
-						g_displayMode = (WaveMode_t)uart1RecData;  // 更新显示模式
-						break;
+			s_iCnt2 = 0;
+		}
+		else
+		{
+			s_iCnt2++;
+		}
 
-					default:
-						/* 非法指令，忽略 */
-						break;
-				}
-			}
-
-			/* 每 8ms 执行一次信号处理任务 */
-			if (s_iCnt4 >= 3)
-			{
-				ecg_adcData  = ReadECGADC();
-				ECGTask(ecg_adcData);
-
-				resp_adcData = ReadRESPADC();
-				RESPTask(resp_adcData);
-
-				SPO2Task();
-
-				s_iCnt4 = 0;
-			}
-			else
-			{
-				s_iCnt4++;
-			}
-
-			LEDFlicker(250);    // LED 心跳指示
-			Clr2msFlag();       // 清除 2ms 标志
-    }
+		LEDFlicker(250);    // LED 心跳指示
+		Clr2msFlag();       // 清除 2ms 标志
+	}
 }
 
 /*********************************************************************************************************
@@ -135,16 +130,62 @@ static void Proc2msTask(void)
 *********************************************************************************************************/
 static void Proc1SecTask(void)
 {
-    if (Get1SecFlag())
-    {
-			OLEDClear();        // 清屏
-			OLED_ECG();         // 显示 ECG 信息
-			OLED_RESP();        // 显示 RESP 信息
-			OLED_SPO2();        // 显示 SPO2 信息
-			OLEDRefreshGRAM();	// 刷新 OLED 显存
+	static u8 s_paramDataPack[6] = {0, 0, 0, 0, 0, 0};	// 参数数据包
+	static u8 s_statusDataPack[6] = {0, 0, 0, 0, 0, 0};	// 状态数据包
+	u16 heartRate;
+	u16 respRate;
+	u16 spo2Value;
+	u8 ecgLeadStatus;
+	u8 ecgErrStatus;
+	u8 respLeadStatus;
+	u8 respErrStatus;
+	u8 spo2LeadStatus;
+	u8 spo2ErrStatus;
+	
+	if (Get1SecFlag())
+	{
+		OLEDClear();        // 清屏
+		OLED_ECG();         // 显示 ECG 信息
+		OLED_RESP();        // 显示 RESP 信息
+		OLED_SPO2();        // 显示 SPO2 信息
+		OLEDRefreshGRAM();	// 刷新 OLED 显存
 
-			Clr1SecFlag();
-    }
+		// printf("TriVital-Monitor is ready!\r\n");
+
+		// 获取参数数据
+		heartRate = ECGGetHeartRate();
+		respRate = RESPGetRespRate();
+		spo2Value = SPO2GetSPO2Value();
+	
+		// 组装参数数据包
+		s_paramDataPack[0] = heartRate >> 8;		//心率高位
+		s_paramDataPack[1] = heartRate & 0xFF;	//心率低位
+		s_paramDataPack[2] = respRate >> 8;
+		s_paramDataPack[3] = respRate & 0xFF;
+		s_paramDataPack[4] = spo2Value >> 8;
+		s_paramDataPack[5] = spo2Value & 0xFF;
+		// 发送参数数据包到主机
+		SendParamPackHost(s_paramDataPack);
+
+		// 获取状态数据
+		ecgLeadStatus = ECGGetLeadStatus();
+		ecgErrStatus = 0;
+		respLeadStatus = RESPGetLeadStatus();
+		respErrStatus = 0;
+		spo2LeadStatus = SPO2GetLeadStatus();
+		spo2ErrStatus = 0;
+		// 组装状态数据包
+		s_statusDataPack[0] = ecgLeadStatus;
+		s_statusDataPack[1] = ecgErrStatus;
+		s_statusDataPack[2] = respLeadStatus;
+		s_statusDataPack[3] = respErrStatus;
+		s_statusDataPack[4] = spo2LeadStatus;
+		s_statusDataPack[5] = spo2ErrStatus;
+		// 发送状态数据包到主机
+		SendStatusPackHost(s_statusDataPack);
+
+		Clr1SecFlag();
+	}
 }
 
 /*********************************************************************************************************
@@ -153,11 +194,11 @@ static void Proc1SecTask(void)
 *********************************************************************************************************/
 int main(void)
 {
-	InitSoftware();         // 软件初始化
 	InitHardware();         // 硬件初始化
+	InitSoftware();         // 软件初始化
 
 	DelayNms(300);          // 等待系统稳定
-	printf("Init System has been finished.\r\n");
+	// printf("Init System has been finished.\r\n");
 
 	while (1)
 	{

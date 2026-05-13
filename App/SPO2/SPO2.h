@@ -36,7 +36,9 @@ extern WaveMode_t g_displayMode;
 *********************************************************************************************************/
 void  InitSPO2(void);        //初始化SPO2模块
 void	SPO2_LED_Task(void);	 //SPO2血氧灯任务
-void  SPO2Task(void);        //SPO2顶层任务
+int  SPO2Task(void);        //SPO2实时处理任务
+u16   SPO2GetSPO2Value(void);   //获取血氧饱和度
+u8   SPO2GetLeadStatus(void);  //获取导联状态
 void  OLED_SPO2(void);	//OLED显示血氧信息
 
 #endif
