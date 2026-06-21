@@ -21,6 +21,7 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
     def __init__(self, flag):
         super(UartSet, self).__init__()
         self.setupUi(self)
+        self.apply_fonts()
         # 设置串口打开标志图片
         if flag:
             self.uartStsLabel.setPixmap(QtGui.QPixmap(":/new/prefix1/image/open.png"))
@@ -30,6 +31,29 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
             self.openUARTButton.setText("打开串口")
         self.init()
         self.serial_search()
+
+    def apply_fonts(self):
+        zh_font = QtGui.QFont("SimHei", 12, 87)
+        mono_font = QtGui.QFont("JetBrains Mono", 12, 87)
+
+        for widget in (
+            self.uartNumLabel,
+            self.baudRateLabel,
+            self.dataBitsLabel,
+            self.stopBitsLabel,
+            self.parityLabel,
+            self.openUARTButton,
+        ):
+            widget.setFont(zh_font)
+
+        for widget in (
+            self.uartNumComboBox,
+            self.baudRateComboBox,
+            self.dataBitsComboBox,
+            self.stopBitsComboBox,
+            self.parityComboBox,
+        ):
+            widget.setFont(mono_font)
 
     def init(self):
         # 关联槽函数
