@@ -38,10 +38,10 @@ class Ui_MainWindow(object):
         self.ecgInfoGroupBox = QtWidgets.QGroupBox(self.centralwidget)
         self.ecgInfoGroupBox.setGeometry(QtCore.QRect(990, 50, 201, 131))
         self.ecgInfoGroupBox.setStyleSheet("        QGroupBox {\n"
-"            border-color: rgb(156, 156, 156);\n"
-"            border-width: 1px;\n"
-"            border-style: solid;\n"
-"            margin-top: 0.5ex;\n"
+"            background-color: #102232;\n"
+"            border: 1px solid #7f93a3;\n"
+"            border-radius: 4px;\n"
+"            margin-top: 0px;\n"
 "        }")
         self.ecgInfoGroupBox.setTitle("")
         self.ecgInfoGroupBox.setFlat(False)
@@ -90,10 +90,10 @@ class Ui_MainWindow(object):
         self.spo2InfoGroupBox = QtWidgets.QGroupBox(self.centralwidget)
         self.spo2InfoGroupBox.setGeometry(QtCore.QRect(990, 270, 201, 131))
         self.spo2InfoGroupBox.setStyleSheet("        QGroupBox {\n"
-"            border-color: rgb(156, 156, 156);\n"
-"            border-width: 1px;\n"
-"            border-style: solid;\n"
-"            margin-top: 0.5ex;\n"
+"            background-color: #102232;\n"
+"            border: 1px solid #7f93a3;\n"
+"            border-radius: 4px;\n"
+"            margin-top: 0px;\n"
 "        }")
         self.spo2InfoGroupBox.setTitle("")
         self.spo2InfoGroupBox.setObjectName("spo2InfoGroupBox")
@@ -132,10 +132,10 @@ class Ui_MainWindow(object):
         self.respInfoGroupBox = QtWidgets.QGroupBox(self.centralwidget)
         self.respInfoGroupBox.setGeometry(QtCore.QRect(990, 510, 201, 131))
         self.respInfoGroupBox.setStyleSheet("        QGroupBox {\n"
-"            border-color: rgb(156, 156, 156);\n"
-"            border-width: 1px;\n"
-"            border-style: solid;\n"
-"            margin-top: 0.5ex;\n"
+"            background-color: #102232;\n"
+"            border: 1px solid #7f93a3;\n"
+"            border-radius: 4px;\n"
+"            margin-top: 0px;\n"
 "        }")
         self.respInfoGroupBox.setTitle("")
         self.respInfoGroupBox.setObjectName("respInfoGroupBox")
