@@ -38,9 +38,9 @@ class Ui_MainWindow(object):
         self.ecgInfoGroupBox = QtWidgets.QGroupBox(self.centralwidget)
         self.ecgInfoGroupBox.setGeometry(QtCore.QRect(990, 50, 201, 131))
         self.ecgInfoGroupBox.setStyleSheet("        QGroupBox {\n"
-"            background-color: #102232;\n"
-"            border: 1px solid #7f93a3;\n"
-"            border-radius: 4px;\n"
+"            background-color: #21252B;\n"
+"            border: 1px solid #3E4451;\n"
+"            border-radius: 6px;\n"
 "            margin-top: 0px;\n"
 "        }")
         self.ecgInfoGroupBox.setTitle("")
@@ -90,9 +90,9 @@ class Ui_MainWindow(object):
         self.spo2InfoGroupBox = QtWidgets.QGroupBox(self.centralwidget)
         self.spo2InfoGroupBox.setGeometry(QtCore.QRect(990, 270, 201, 131))
         self.spo2InfoGroupBox.setStyleSheet("        QGroupBox {\n"
-"            background-color: #102232;\n"
-"            border: 1px solid #7f93a3;\n"
-"            border-radius: 4px;\n"
+"            background-color: #21252B;\n"
+"            border: 1px solid #3E4451;\n"
+"            border-radius: 6px;\n"
 "            margin-top: 0px;\n"
 "        }")
         self.spo2InfoGroupBox.setTitle("")
@@ -132,9 +132,9 @@ class Ui_MainWindow(object):
         self.respInfoGroupBox = QtWidgets.QGroupBox(self.centralwidget)
         self.respInfoGroupBox.setGeometry(QtCore.QRect(990, 510, 201, 131))
         self.respInfoGroupBox.setStyleSheet("        QGroupBox {\n"
-"            background-color: #102232;\n"
-"            border: 1px solid #7f93a3;\n"
-"            border-radius: 4px;\n"
+"            background-color: #21252B;\n"
+"            border: 1px solid #3E4451;\n"
+"            border-radius: 6px;\n"
 "            margin-top: 0px;\n"
 "        }")
         self.respInfoGroupBox.setTitle("")
