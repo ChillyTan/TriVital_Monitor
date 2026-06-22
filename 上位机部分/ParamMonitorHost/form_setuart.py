@@ -27,7 +27,7 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
 
     def apply_fonts(self):
         zh_font = QtGui.QFont("SimHei", 12, 87)
-        mono_font = QtGui.QFont("JetBrains Mono", 12, 87)
+        mono_font = QtGui.QFont("DejaVu Sans Mono", 12, 87)
 
         for widget in (
             self.uartNumLabel,

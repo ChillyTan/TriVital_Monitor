@@ -18,6 +18,11 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
     def __init__(self):
         super(ParamMonitor, self).__init__()
         self.setupUi(self)
+        self.setDockOptions(
+            QtWidgets.QMainWindow.AllowNestedDocks |
+            QtWidgets.QMainWindow.AllowTabbedDocks |
+            QtWidgets.QMainWindow.AnimatedDocks
+        )
         self.setup_responsive_ui()
         self.ser = serial.Serial()
         self.mPackUnpck = PackUnpack()
@@ -73,17 +78,15 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.init()
 
     def init(self):
+        self.menubar.setVisible(False)
         self.menu1 = QAction(self)
         self.menu1.setText('串口设置')
-        self.menubar.addAction(self.menu1)
         self.menu1.triggered.connect(self.slot_serialSet)
         self.menu4 = QAction(self)
         self.menu4.setText('关于')
-        self.menubar.addAction(self.menu4)
         self.menu4.triggered.connect(self.slot_about)
         self.menu5 = QAction(self)
         self.menu5.setText('退出')
-        self.menubar.addAction(self.menu5)
         self.menu5.triggered.connect(self.slot_quit)
         self.statusStr = '等待连接串口'
         self.statusBar().showMessage(self.statusStr)
@@ -161,22 +164,77 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.actionMuteAlarm.triggered.connect(self.toggle_alarm_mute)
         self.toolbar.addAction(self.actionMuteAlarm)
 
-        self.actionDebugPanel = QAction("协议调试", self)
+        self.viewMenu = QtWidgets.QMenu("视图", self)
+        self.viewMenu.setStyleSheet("""
+            QMenu {
+                background-color: #21252B;
+                color: #DCDFE4;
+                border: 1px solid #3E4451;
+                padding: 4px;
+                font-family: SimHei;
+                font-size: 14px;
+                font-weight: 900;
+            }
+            QMenu::item {
+                padding: 7px 28px 7px 12px;
+                background: transparent;
+            }
+            QMenu::item:selected {
+                background-color: #3A4B5F;
+                color: #FFFFFF;
+            }
+            QMenu::indicator {
+                width: 14px;
+                height: 14px;
+            }
+        """)
+
+        self.actionDebugPanel = QAction("显示协议调试", self)
         self.actionDebugPanel.setCheckable(True)
         self.actionDebugPanel.setChecked(True)
         self.actionDebugPanel.triggered.connect(self.toggle_debug_panel)
-        self.toolbar.addAction(self.actionDebugPanel)
+        self.viewMenu.addAction(self.actionDebugPanel)
+
+        self.actionDockDebugLeft = QAction("调试左侧", self)
+        self.actionDockDebugLeft.triggered.connect(lambda: self.dock_debug_panel(Qt.LeftDockWidgetArea))
+        self.viewMenu.addAction(self.actionDockDebugLeft)
+
+        self.actionDockDebugRight = QAction("调试右侧", self)
+        self.actionDockDebugRight.triggered.connect(lambda: self.dock_debug_panel(Qt.RightDockWidgetArea))
+        self.viewMenu.addAction(self.actionDockDebugRight)
+
+        self.viewToolButton = QtWidgets.QToolButton(self)
+        self.viewToolButton.setText("视图")
+        self.viewToolButton.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.viewToolButton.setMenu(self.viewMenu)
+        self.toolbar.addWidget(self.viewToolButton)
+
+        self.toolbar.addSeparator()
+
+        self.actionAboutToolbar = QAction("关于", self)
+        self.actionAboutToolbar.triggered.connect(self.slot_about)
+        self.toolbar.addAction(self.actionAboutToolbar)
+
+        self.actionQuitToolbar = QAction("退出", self)
+        self.actionQuitToolbar.triggered.connect(self.slot_quit)
+        self.toolbar.addAction(self.actionQuitToolbar)
 
     def setup_debug_dock(self):
         self.debugDock = QtWidgets.QDockWidget("协议调试", self)
-        self.debugDock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea)
+        self.debugDock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.debugDock.setFeatures(
+            QtWidgets.QDockWidget.DockWidgetClosable |
+            QtWidgets.QDockWidget.DockWidgetMovable |
+            QtWidgets.QDockWidget.DockWidgetFloatable
+        )
         debug_widget = QtWidgets.QWidget()
+        debug_widget.setStyleSheet("background-color: #21252B; color: #DCDFE4;")
         debug_layout = QtWidgets.QVBoxLayout(debug_widget)
         debug_layout.setContentsMargins(8, 8, 8, 8)
         debug_layout.setSpacing(6)
 
         self.protocolStatsLabel = QtWidgets.QLabel()
-        self.protocolStatsLabel.setStyleSheet("color: #ABB2BF; font-family: JetBrains Mono; font-size: 12px;")
+        self.protocolStatsLabel.setStyleSheet("color: #ABB2BF; font-family: DejaVu Sans Mono; font-size: 12px;")
         self.debugTextEdit = QtWidgets.QPlainTextEdit()
         self.debugTextEdit.setReadOnly(True)
         self.debugTextEdit.setMaximumBlockCount(300)
@@ -185,7 +243,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
                 background-color: #1E2127;
                 color: #DCDFE4;
                 border: 1px solid #3E4451;
-                font-family: JetBrains Mono;
+                font-family: DejaVu Sans Mono;
                 font-size: 12px;
             }
         """)
@@ -196,8 +254,30 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             QDockWidget {
                 background: #21252B;
                 color: #DCDFE4;
+                border: 1px solid #3E4451;
                 font-family: SimHei;
+                font-size: 14px;
                 font-weight: 900;
+            }
+            QDockWidget::title {
+                background: #21252B;
+                color: #DCDFE4;
+                padding: 6px 8px;
+                border-bottom: 1px solid #3E4451;
+                text-align: left;
+            }
+            QDockWidget::close-button,
+            QDockWidget::float-button {
+                background: #2C313A;
+                border: 1px solid #3E4451;
+                border-radius: 2px;
+                width: 14px;
+                height: 14px;
+            }
+            QDockWidget::close-button:hover,
+            QDockWidget::float-button:hover {
+                background: #3A4B5F;
+                border-color: #61AFEF;
             }
         """)
         self.debugDock.visibilityChanged.connect(self.actionDebugPanel.setChecked)
@@ -231,16 +311,16 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.update_protocol_stats()
 
     def setup_responsive_ui(self):
-        self.setWindowTitle("TriVital Monitor")
+        self.setWindowTitle("TRIVITAL MONITOR")
         self.setMinimumSize(980, 600)
         self.resize(1280, 760)
 
         zh_font_family = '"SimHei", "Microsoft YaHei"'
-        mono_font_family = '"JetBrains Mono"'
-        mixed_font_family = '"JetBrains Mono", "SimHei", "Microsoft YaHei"'
+        mono_font_family = '"DejaVu Sans Mono"'
+        mixed_font_family = '"DejaVu Sans Mono", "SimHei", "Microsoft YaHei"'
         base_font = QtGui.QFont("SimHei", 20, 87)
-        title_font = QtGui.QFont("JetBrains Mono", 32, 87)
-        value_font = QtGui.QFont("JetBrains Mono", 40, 87)
+        title_font = QtGui.QFont("DejaVu Sans Mono", 32, 87)
+        value_font = QtGui.QFont("DejaVu Sans Mono", 40, 87)
         self.setFont(base_font)
 
         self.setStyleSheet(f"""
@@ -489,12 +569,12 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         main_layout.setSpacing(8)
 
         header_layout = QtWidgets.QHBoxLayout()
-        self.titleWaveLabel = QtWidgets.QLabel("TriVital Monitor")
-        self.titleMetricLabel = QtWidgets.QLabel("实时监护")
+        self.titleWaveLabel = QtWidgets.QLabel("TRIVITAL MONITOR")
+        self.titleMetricLabel = QtWidgets.QLabel("报警状态: 正常")
         self.titleWaveLabel.setStyleSheet(f"color: #61AFEF; font-size: 32px; font-family: {mono_font_family}; font-weight: 900;")
-        self.titleMetricLabel.setStyleSheet(f"color: #98C379; font-size: 32px; font-family: {zh_font_family}; font-weight: 900;")
-        self.titleWaveLabel.setFont(QtGui.QFont("JetBrains Mono", 22, 87))
-        self.titleMetricLabel.setFont(QtGui.QFont("SimHei", 15, 87))
+        self.titleMetricLabel.setStyleSheet(f"color: #98C379; font-size: 22px; font-family: {zh_font_family}; font-weight: 900;")
+        self.titleWaveLabel.setFont(QtGui.QFont("DejaVu Sans Mono", 22, 87))
+        self.titleMetricLabel.setFont(QtGui.QFont("SimHei", 13, 87))
         header_layout.addWidget(self.titleWaveLabel, 1)
         header_layout.addWidget(self.titleMetricLabel, 0, Qt.AlignRight)
         main_layout.addLayout(header_layout)
@@ -640,6 +720,13 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
     def toggle_debug_panel(self, checked):
         self.debug_visible = checked
         self.debugDock.setVisible(checked)
+
+    def dock_debug_panel(self, area):
+        self.debugDock.setFloating(False)
+        self.addDockWidget(area, self.debugDock)
+        self.debugDock.show()
+        self.debugDock.raise_()
+        self.actionDebugPanel.setChecked(True)
 
     def clear_wave_screen(self):
         self.clearData()
@@ -909,11 +996,11 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.set_metric_state(self.heartRateLabel, "#98C379", hr_alarm, self.last_hr is None)
         self.set_metric_state(self.respRateLabel, "#E5C07B", resp_alarm, self.last_resp_rate is None)
         self.set_metric_state(self.labelSPO2Data, "#56B6C2", spo2_alarm, self.last_spo2 is None)
-        self.titleMetricLabel.setText("报警" if alarms else "实时监护")
+        self.titleMetricLabel.setText("报警状态: 异常" if alarms else "报警状态: 正常")
         self.titleMetricLabel.setStyleSheet(
-            "color: #E06C75; font-size: 32px; font-family: SimHei; font-weight: 900;"
+            "color: #E06C75; font-size: 22px; font-family: SimHei; font-weight: 900;"
             if alarms else
-            "color: #98C379; font-size: 32px; font-family: SimHei; font-weight: 900;"
+            "color: #98C379; font-size: 22px; font-family: SimHei; font-weight: 900;"
         )
         if alarms and not self.alarm_muted:
             QApplication.beep()
@@ -1060,7 +1147,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         sys.exit(0)
 
     def slot_about(self):
-        QMessageBox.information(None, '关于', "TriVital Monitor\nLMH&TZZ", QMessageBox.Ok)
+        QMessageBox.information(None, '关于', "TriVital Monitor\nLMH & TZZ", QMessageBox.Ok)
 
     def slot_quit(self):
         app = QApplication.instance()
