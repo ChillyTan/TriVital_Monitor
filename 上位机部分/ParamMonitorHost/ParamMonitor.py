@@ -14,7 +14,29 @@ from form_setuart import UartSet
 import serial
 import qtawesome as qta
 import qtawesome.iconic_font as qta_iconic
+from monitor_alarm import AlarmLimits, evaluate_alarm_state
 from PackUnpack import PackUnpack
+from ui_theme import (
+    COLORS,
+    MONO_FONT,
+    alarm_title_style,
+    debug_controls_style,
+    bold_font,
+    debug_dock_style,
+    debug_text_style,
+    main_window_style,
+    menu_bar_style,
+    menu_style,
+    metric_card_style,
+    metric_name_style,
+    metric_unit_style,
+    metric_value_style,
+    status_bar_style,
+    status_label_style,
+    toolbar_style,
+    wave_label_style,
+    wave_title_style,
+)
 
 qta_iconic.IconicFont._install_fonts = lambda self, fonts_directory, system_wide=False: fonts_directory
 
@@ -57,6 +79,8 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.heart_icon_visible = True
         self.wave_paused = False
         self.debug_visible = True
+        self.debug_output_paused = False
+        self.debug_error_only = False
         self.alarm_muted = False
         self.active_alarms = []
         self.last_hr = None
@@ -71,13 +95,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.last_packet_time = None
         self.current_port_label = "未连接"
         self.current_baudrate = ""
-        self.alarm_limits = {
-            "HR_LOW": 50,
-            "HR_HIGH": 120,
-            "RESP_LOW": 8,
-            "RESP_HIGH": 30,
-            "SPO2_LOW": 90,
-        }
+        self.alarm_limits = AlarmLimits()
         self.setup_logger()
         self.init()
 
@@ -127,33 +145,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.toolbar.setMovable(False)
         self.toolbar.setIconSize(QtCore.QSize(18, 18))
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.toolbar.setStyleSheet("""
-            QToolBar {
-                background: #21252B;
-                border-bottom: 1px solid #3E4451;
-                spacing: 8px;
-                padding: 6px 12px;
-            }
-            QToolButton {
-                color: #DCDFE4;
-                background: #2C313A;
-                border: 1px solid #3E4451;
-                border-radius: 6px;
-                padding: 6px 12px;
-                font-family: SimHei;
-                font-size: 14px;
-                font-weight: 900;
-            }
-            QToolButton:hover {
-                border-color: #61AFEF;
-                background: #333945;
-            }
-            QToolButton:checked {
-                color: #FFFFFF;
-                background: #3A4B5F;
-                border-color: #61AFEF;
-            }
-        """)
+        self.toolbar.setStyleSheet(toolbar_style())
         self.addToolBar(Qt.TopToolBarArea, self.toolbar)
 
         self.actionSerialToolbar = QAction(self.icon("fa5s.plug", "#61AFEF"), "串口", self)
@@ -175,29 +167,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.toolbar.addAction(self.actionMuteAlarm)
 
         self.viewMenu = QtWidgets.QMenu("视图", self)
-        self.viewMenu.setStyleSheet("""
-            QMenu {
-                background-color: #21252B;
-                color: #DCDFE4;
-                border: 1px solid #3E4451;
-                padding: 4px;
-                font-family: SimHei;
-                font-size: 14px;
-                font-weight: 900;
-            }
-            QMenu::item {
-                padding: 7px 28px 7px 12px;
-                background: transparent;
-            }
-            QMenu::item:selected {
-                background-color: #3A4B5F;
-                color: #FFFFFF;
-            }
-            QMenu::indicator {
-                width: 14px;
-                height: 14px;
-            }
-        """)
+        self.viewMenu.setStyleSheet(menu_style())
 
         self.actionDebugPanel = QAction(self.icon("fa5s.terminal", "#56B6C2"), "显示协议调试", self)
         self.actionDebugPanel.setCheckable(True)
@@ -240,65 +210,75 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             QtWidgets.QDockWidget.DockWidgetFloatable
         )
         debug_widget = QtWidgets.QWidget()
-        debug_widget.setStyleSheet("background-color: #21252B; color: #DCDFE4;")
+        debug_widget.setStyleSheet(f"background-color: {COLORS['panel']}; color: {COLORS['text']};")
         debug_layout = QtWidgets.QVBoxLayout(debug_widget)
         debug_layout.setContentsMargins(8, 8, 8, 8)
         debug_layout.setSpacing(6)
 
         self.protocolStatsLabel = QtWidgets.QLabel()
-        self.protocolStatsLabel.setStyleSheet("color: #ABB2BF; font-family: DejaVu Sans Mono; font-size: 12px;")
+        self.protocolStatsLabel.setStyleSheet(f"color: {COLORS['text_muted']}; font-family: {MONO_FONT}; font-size: 12px;")
         self.debugTextEdit = QtWidgets.QPlainTextEdit()
         self.debugTextEdit.setReadOnly(True)
         self.debugTextEdit.setMaximumBlockCount(300)
-        self.debugTextEdit.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #1E2127;
-                color: #DCDFE4;
-                border: 1px solid #3E4451;
-                font-family: DejaVu Sans Mono;
-                font-size: 12px;
-            }
-        """)
+        self.debugTextEdit.setStyleSheet(debug_text_style())
         debug_layout.addWidget(self.protocolStatsLabel)
         debug_layout.addWidget(self.debugTextEdit, 1)
+
+        controls_group = QtWidgets.QGroupBox("DEBUG OUTPUT")
+        controls_group.setStyleSheet(debug_controls_style())
+        controls_layout = QtWidgets.QGridLayout(controls_group)
+        controls_layout.setContentsMargins(15, 28, 15, 14)
+        controls_layout.setVerticalSpacing(10)
+        controls_layout.setHorizontalSpacing(10)
+
+        self.pauseDebugButton = QtWidgets.QPushButton("暂停输出")
+        self.pauseDebugButton.setCheckable(True)
+        self.pauseDebugButton.setCursor(Qt.PointingHandCursor)
+        self.pauseDebugButton.toggled.connect(self.toggle_debug_output_pause)
+
+        self.errorOnlyButton = QtWidgets.QPushButton("只看错误")
+        self.errorOnlyButton.setObjectName("errorOnlyButton")
+        self.errorOnlyButton.setCheckable(True)
+        self.errorOnlyButton.setCursor(Qt.PointingHandCursor)
+        self.errorOnlyButton.toggled.connect(self.toggle_debug_error_only)
+
+        self.clearDebugButton = QtWidgets.QPushButton("清空调试")
+        self.clearDebugButton.setObjectName("clearDebugButton")
+        self.clearDebugButton.setCursor(Qt.PointingHandCursor)
+        self.clearDebugButton.clicked.connect(self.clear_debug_output)
+
+        controls_layout.addWidget(self.pauseDebugButton, 0, 0)
+        controls_layout.addWidget(self.errorOnlyButton, 0, 1)
+        controls_layout.addWidget(self.clearDebugButton, 1, 0, 1, 2)
+        debug_layout.addWidget(controls_group)
+
         self.debugDock.setWidget(debug_widget)
-        self.debugDock.setStyleSheet("""
-            QDockWidget {
-                background: #21252B;
-                color: #DCDFE4;
-                border: 1px solid #3E4451;
-                font-family: SimHei;
-                font-size: 14px;
-                font-weight: 900;
-            }
-            QDockWidget::title {
-                background: #21252B;
-                color: #DCDFE4;
-                padding: 6px 8px;
-                border-bottom: 1px solid #3E4451;
-                text-align: left;
-            }
-            QDockWidget::close-button,
-            QDockWidget::float-button {
-                background: #2C313A;
-                border: 1px solid #3E4451;
-                border-radius: 2px;
-                width: 14px;
-                height: 14px;
-            }
-            QDockWidget::close-button:hover,
-            QDockWidget::float-button:hover {
-                background: #3A4B5F;
-                border-color: #61AFEF;
-            }
-        """)
+        self.debugDock.setStyleSheet(debug_dock_style())
         self.debugDock.visibilityChanged.connect(self.actionDebugPanel.setChecked)
         self.addDockWidget(Qt.RightDockWidgetArea, self.debugDock)
+        self.resizeDocks([self.debugDock], [360], Qt.Horizontal)
 
-    def append_debug_log(self, text):
+    def append_debug_log(self, text, level="info"):
+        if not hasattr(self, "debugTextEdit"):
+            return
+        if self.debug_output_paused:
+            return
+        if self.debug_error_only and level != "error":
+            return
+        timestamp = time.strftime("%H:%M:%S")
+        self.debugTextEdit.appendPlainText(f"{timestamp} {text}")
+
+    def toggle_debug_output_pause(self, checked):
+        self.debug_output_paused = checked
+        self.pauseDebugButton.setText("继续输出" if checked else "暂停输出")
+
+    def toggle_debug_error_only(self, checked):
+        self.debug_error_only = checked
+        self.errorOnlyButton.setText("显示全部" if checked else "只看错误")
+
+    def clear_debug_output(self):
         if hasattr(self, "debugTextEdit"):
-            timestamp = time.strftime("%H:%M:%S")
-            self.debugTextEdit.appendPlainText(f"{timestamp} {text}")
+            self.debugTextEdit.clear()
 
     def update_protocol_stats(self):
         if not hasattr(self, "protocolStatsLabel"):
@@ -327,172 +307,37 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.setMinimumSize(980, 600)
         self.resize(1280, 760)
 
-        zh_font_family = '"SimHei", "Microsoft YaHei"'
-        mono_font_family = '"DejaVu Sans Mono"'
-        mixed_font_family = '"DejaVu Sans Mono", "SimHei", "Microsoft YaHei"'
-        base_font = QtGui.QFont("SimHei", 20, 87)
-        title_font = QtGui.QFont("DejaVu Sans Mono", 32, 87)
-        value_font = QtGui.QFont("DejaVu Sans Mono", 40, 87)
+        base_font = bold_font("SimHei", 20)
+        title_font = bold_font("DejaVu Sans Mono", 32)
+        value_font = bold_font("DejaVu Sans Mono", 40)
         self.setFont(base_font)
 
-        self.setStyleSheet(f"""
-            QWidget {{
-                color: #DCDFE4;
-                font-family: {mixed_font_family};
-                font-weight: 900;
-            }}
-            QLabel {{
-                background: transparent;
-                font-family: {zh_font_family};
-                font-weight: 900;
-            }}
-            QMenuBar {{
-                font-family: {zh_font_family};
-                font-weight: 900;
-                font-size: 14px;
-                background: #21252B;
-                padding: 3px 10px;
-                border-bottom: 1px solid #3E4451;
-                color: #DCDFE4;
-            }}
-            QMenuBar::item {{
-                padding: 7px 14px;
-                border-radius: 4px;
-            }}
-            QMenuBar::item:selected {{
-                background-color: #3B4048;
-                color: #ffffff;
-            }}
-            QStatusBar {{
-                font-family: {mixed_font_family};
-                font-weight: 900;
-                font-size: 14px;
-                background: #21252B;
-                border-top: 1px solid #3E4451;
-                color: #61AFEF;
-            }}
-            QGroupBox {{
-                background-color: #21252B;
-                border: 1px solid #3E4451;
-                border-radius: 6px;
-                margin-top: 0px;
-            }}
-            QGroupBox#metricCard {{
-                background-color: #23272F;
-                border: 1px solid #414855;
-                border-radius: 8px;
-            }}
-            QLabel#waveTitle {{
-                color: #61AFEF;
-                font-size: 24px;
-                font-family: {mono_font_family};
-                font-weight: 900;
-                padding-left: 4px;
-            }}
-            QLabel#waveLabel {{
-                background-color: #1E2127;
-                border: 1px solid #3E4451;
-                border-radius: 2px;
-            }}
-            QLabel#metricName {{
-                color: #7F848E;
-                font-size: 24px;
-                font-family: {zh_font_family};
-                font-weight: 900;
-            }}
-            QLabel#metricUnit {{
-                color: #ABB2BF;
-                font-size: 24px;
-                font-family: {mono_font_family};
-                font-weight: 900;
-            }}
-            QLabel#metricValue {{
-                font-size: 50px;
-                font-family: {mono_font_family};
-                font-weight: 900;
-            }}
-            QLabel#statusText {{
-                padding: 6px 10px;
-                border: 1px solid #98C379;
-                border-radius: 6px;
-                background-color: #223024;
-                color: #98C379;
-                font-size: 20px;
-                font-family: {zh_font_family};
-                font-weight: 900;
-            }}
-        """)
-
-        self.centralwidget.setStyleSheet("background-color: #282C34;")
-        self.menubar.setStyleSheet(f"""
-            QMenuBar {{
-                background-color: #21252B;
-                color: #DCDFE4;
-                border-bottom: 1px solid #3E4451;
-                font-family: {zh_font_family};
-                font-size: 16px;
-                font-weight: 900;
-                padding: 4px 10px;
-            }}
-            QMenuBar::item {{
-                padding: 7px 14px;
-                border-radius: 4px;
-            }}
-            QMenuBar::item:selected {{
-                background-color: #3B4048;
-                color: #ffffff;
-            }}
-        """)
-        self.statusBar().setStyleSheet(f"""
-            QStatusBar {{
-                background-color: #21252B;
-                color: #61AFEF;
-                border-top: 1px solid #3E4451;
-                font-family: {zh_font_family};
-                font-size: 16px;
-                font-weight: 900;
-            }}
-        """)
+        self.setStyleSheet(main_window_style())
+        self.centralwidget.setStyleSheet(f"background-color: {COLORS['window']};")
+        self.menubar.setStyleSheet(menu_bar_style())
+        self.statusBar().setStyleSheet(status_bar_style())
 
         wave_title_styles = (
-            (self.ecg1Label, "#98C379"),
-            (self.spo2Label, "#56B6C2"),
-            (self.respLabel, "#E5C07B"),
+            (self.ecg1Label, COLORS["ecg"]),
+            (self.spo2Label, COLORS["spo2"]),
+            (self.respLabel, COLORS["resp"]),
         )
         for label, title_color in wave_title_styles:
             label.setObjectName("waveTitle")
             label.setFont(title_font)
             label.setMinimumHeight(28)
-            label.setStyleSheet(f"""
-                color: {title_color};
-                background: transparent;
-                font-size: 24px;
-                font-family: {mono_font_family};
-                font-weight: 900;
-                padding-left: 6px;
-            """)
+            label.setStyleSheet(wave_title_style(title_color))
 
         for wave_label in (self.ecg1WaveLabel, self.spo2WaveLabel, self.respWaveLabel):
             wave_label.setObjectName("waveLabel")
             wave_label.setText("")
             wave_label.setMinimumHeight(135)
             wave_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            wave_label.setStyleSheet("""
-                background-color: #1E2127;
-                border: 1px solid #3E4451;
-                border-radius: 2px;
-            """)
+            wave_label.setStyleSheet(wave_label_style())
 
         for group_box in (self.ecgInfoGroupBox, self.spo2InfoGroupBox, self.respInfoGroupBox):
             group_box.setObjectName("metricCard")
-            group_box.setStyleSheet("""
-                QGroupBox {
-                    background-color: #23272F;
-                    border: 1px solid #414855;
-                    border-radius: 8px;
-                    margin-top: 0px;
-                }
-            """)
+            group_box.setStyleSheet(metric_card_style())
             group_box.setMinimumWidth(245)
             group_box.setMaximumWidth(330)
             group_box.setMinimumHeight(160)
@@ -522,46 +367,28 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             value_label.setObjectName("metricValue")
             value_label.setFont(value_font)
             value_label.setAlignment(Qt.AlignCenter)
-        self.heartRateLabel.setStyleSheet("color: #98C379; background: transparent;")
-        self.labelSPO2Data.setStyleSheet("color: #56B6C2; background: transparent;")
-        self.respRateLabel.setStyleSheet("color: #E5C07B; background: transparent;")
+        self.heartRateLabel.setStyleSheet(metric_value_style(COLORS["ecg"]))
+        self.labelSPO2Data.setStyleSheet(metric_value_style(COLORS["spo2"]))
+        self.respRateLabel.setStyleSheet(metric_value_style(COLORS["resp"]))
 
         for name_label in (self.heartRateTextLabel, self.spo2InfoLabel, self.respUnitLabel):
             name_label.setObjectName("metricName")
             name_label.setAlignment(Qt.AlignCenter)
-            name_label.setStyleSheet(f"""
-                color: #7F848E;
-                background: transparent;
-                font-size: 24px;
-                font-family: {zh_font_family};
-                font-weight: 900;
-            """)
+            name_label.setStyleSheet(metric_name_style())
+        self.heartRateTextLabel.setStyleSheet(metric_name_style(COLORS["ecg"]))
+        self.spo2InfoLabel.setStyleSheet(metric_name_style(COLORS["spo2"]))
+        self.respUnitLabel.setStyleSheet(metric_name_style(COLORS["resp"]))
 
         for unit_label in (self.heartRateUnitLabel, self.spo2UnitLabel, self.respBpmLabel):
             unit_label.setObjectName("metricUnit")
             unit_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-            unit_label.setStyleSheet(f"""
-                color: #ABB2BF;
-                background: transparent;
-                font-size: 24px;
-                font-family: {mono_font_family};
-                font-weight: 900;
-            """)
+            unit_label.setStyleSheet(metric_unit_style())
 
         for status_label in (self.labelecg_status, self.labelspo2_status, self.labelresp_status):
             status_label.setObjectName("statusText")
             status_label.setAlignment(Qt.AlignCenter)
             status_label.setText("等待信号")
-            status_label.setStyleSheet(f"""
-                color: #98C379;
-                background-color: #223024;
-                border: 1px solid #98C379;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 20px;
-                font-family: {zh_font_family};
-                font-weight: 900;
-            """)
+            status_label.setStyleSheet(status_label_style(False))
 
         self.heartRateLabel.setText("---")
         self.labelSPO2Data.setText("---")
@@ -583,10 +410,10 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         header_layout = QtWidgets.QHBoxLayout()
         self.titleWaveLabel = QtWidgets.QLabel("TRIVITAL MONITOR")
         self.titleMetricLabel = QtWidgets.QLabel("报警状态: 正常")
-        self.titleWaveLabel.setStyleSheet(f"color: #61AFEF; font-size: 32px; font-family: {mono_font_family}; font-weight: 900;")
-        self.titleMetricLabel.setStyleSheet(f"color: #98C379; font-size: 22px; font-family: {zh_font_family}; font-weight: 900;")
-        self.titleWaveLabel.setFont(QtGui.QFont("DejaVu Sans Mono", 22, 87))
-        self.titleMetricLabel.setFont(QtGui.QFont("SimHei", 13, 87))
+        self.titleWaveLabel.setStyleSheet(f"color: {COLORS['primary']}; font-size: 32px; font-family: {MONO_FONT}; font-weight: 900;")
+        self.titleMetricLabel.setStyleSheet(alarm_title_style(False))
+        self.titleWaveLabel.setFont(bold_font("DejaVu Sans Mono", 22))
+        self.titleMetricLabel.setFont(bold_font("SimHei", 13))
         header_layout.addWidget(self.titleWaveLabel, 1)
         header_layout.addWidget(self.titleMetricLabel, 0, Qt.AlignRight)
         main_layout.addLayout(header_layout)
@@ -664,7 +491,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.maxRespLength = max(1, self.respWaveLabel.width())
         self.maxRespHeight = max(1, self.respWaveLabel.height())
         self.pixmapResp = QPixmap(self.maxRespLength, self.maxRespHeight)
-        self.pixmapResp.fill(QColor("#1E2127"))
+        self.pixmapResp.fill(QColor(COLORS["surface"]))
         self.painterResp = QPainter(self.pixmapResp)
         self._draw_wave_grid(self.painterResp, self.maxRespLength, self.maxRespHeight)
         self.respWaveLabel.setPixmap(self.pixmapResp)
@@ -672,7 +499,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.maxSPO2Length = max(1, self.spo2WaveLabel.width())
         self.maxSPO2Height = max(1, self.spo2WaveLabel.height())
         self.pixmapSPO2 = QPixmap(self.maxSPO2Length, self.maxSPO2Height)
-        self.pixmapSPO2.fill(QColor("#1E2127"))
+        self.pixmapSPO2.fill(QColor(COLORS["surface"]))
         self.painterSPO2 = QPainter(self.pixmapSPO2)
         self._draw_wave_grid(self.painterSPO2, self.maxSPO2Length, self.maxSPO2Height)
         self.spo2WaveLabel.setPixmap(self.pixmapSPO2)
@@ -680,7 +507,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.maxECG1Length = max(1, self.ecg1WaveLabel.width())
         self.maxECG1Height = max(1, self.ecg1WaveLabel.height())
         self.pixmapECG1 = QPixmap(self.maxECG1Length, self.maxECG1Height)
-        self.pixmapECG1.fill(QColor("#1E2127"))
+        self.pixmapECG1.fill(QColor(COLORS["surface"]))
         self.painterEcg1 = QPainter(self.pixmapECG1)
         self._draw_wave_grid(self.painterEcg1, self.maxECG1Length, self.maxECG1Height)
         self.ecg1WaveLabel.setPixmap(self.pixmapECG1)
@@ -690,8 +517,8 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.mECG1XStep = min(self.mECG1XStep, self.maxECG1Length - 1)
 
     def _clear_wave_region(self, painter, x, width, height):
-        painter.setBrush(QColor("#1E2127"))
-        painter.setPen(QPen(QColor("#1E2127"), 1, Qt.SolidLine))
+        painter.setBrush(QColor(COLORS["surface"]))
+        painter.setPen(QPen(QColor(COLORS["surface"]), 1, Qt.SolidLine))
         painter.drawRect(QRect(x, 0, width, height))
 
     def _draw_wave_grid(self, painter, width, height):
@@ -801,13 +628,14 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             data = bytes(data)
             self.ser.write(data)
         else:
-            self.append_debug_log("TX ignored: serial closed")
+            self.append_debug_log("TX ignored: serial closed", level="error")
 
     def data_receive(self):
         try:
             num = self.ser.inWaiting()
         except Exception as exc:
             self.logger.warning("串口读取失败: %s", exc)
+            self.append_debug_log(f"RX error: {exc}", level="error")
             self.disconnect_serial("串口读取失败")
             QMessageBox.warning(self, "串口断开", f"串口读取失败，已断开连接: {exc}")
             return None
@@ -821,6 +649,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
                     if byte < 0x80 and self.mPackUnpck.sPackLen < 10:
                         self.sync_error_count += 1
                         self.checksum_error_count += 1
+                        self.append_debug_log(f"SYNC error byte={byte:02X}", level="error")
                         self.mPackUnpck.sGotPackId = False
                         self.mPackUnpck.sPackLen = 0
                         self.mPackUnpck.sRestByteNum = 0
@@ -939,81 +768,57 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
 
         if leadecg:
             self.labelecg_status.setText("导联正常")
-            self.labelecg_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 6px; padding: 6px 10px;")
+            self.labelecg_status.setStyleSheet(status_label_style(False))
         else:
             self.labelecg_status.setText("导联异常")
-            self.labelecg_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 6px; padding: 6px 10px;")
+            self.labelecg_status.setStyleSheet(status_label_style(True))
 
         if leadresp:
             self.labelresp_status.setText("导联正常")
-            self.labelresp_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 6px; padding: 6px 10px;")
+            self.labelresp_status.setStyleSheet(status_label_style(False))
         else:
             self.labelresp_status.setText("导联异常")
-            self.labelresp_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 6px; padding: 6px 10px;")
+            self.labelresp_status.setStyleSheet(status_label_style(True))
 
         if leadspo2:
             self.labelspo2_status.setText("导联正常")
-            self.labelspo2_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 6px; padding: 6px 10px;")
+            self.labelspo2_status.setStyleSheet(status_label_style(False))
         else:
             self.labelspo2_status.setText("导联异常")
-            self.labelspo2_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 6px; padding: 6px 10px;")
+            self.labelspo2_status.setStyleSheet(status_label_style(True))
         self.evaluate_alarms()
 
     def set_metric_state(self, label, normal_color, alarm=False, invalid=False):
         if invalid:
-            color = "#7F848E"
+            color = COLORS["text_dim"]
         elif alarm:
-            color = "#E06C75"
+            color = COLORS["alarm"]
         else:
             color = normal_color
-        label.setStyleSheet(f"color: {color}; background: transparent;")
+        label.setStyleSheet(metric_value_style(color))
 
     def evaluate_alarms(self):
-        alarms = []
-        hr_alarm = False
-        resp_alarm = False
-        spo2_alarm = False
-
-        if self.last_hr is not None:
-            if self.last_hr < self.alarm_limits["HR_LOW"]:
-                alarms.append(f"心率过低 {self.last_hr}")
-                hr_alarm = True
-            elif self.last_hr > self.alarm_limits["HR_HIGH"]:
-                alarms.append(f"心率过高 {self.last_hr}")
-                hr_alarm = True
-
-        if self.last_resp_rate is not None:
-            if self.last_resp_rate < self.alarm_limits["RESP_LOW"]:
-                alarms.append(f"呼吸过低 {self.last_resp_rate}")
-                resp_alarm = True
-            elif self.last_resp_rate > self.alarm_limits["RESP_HIGH"]:
-                alarms.append(f"呼吸过高 {self.last_resp_rate}")
-                resp_alarm = True
-
-        if self.last_spo2 is not None and self.last_spo2 < self.alarm_limits["SPO2_LOW"]:
-            alarms.append(f"血氧过低 {self.last_spo2}%")
-            spo2_alarm = True
-
-        for name, ok in self.lead_status.items():
-            if ok is False:
-                alarms.append(f"{name}导联异常")
+        result = evaluate_alarm_state(
+            self.last_hr,
+            self.last_resp_rate,
+            self.last_spo2,
+            self.lead_status,
+            self.alarm_limits,
+        )
+        alarms = result.alarms
 
         previous = set(self.active_alarms)
         current = set(alarms)
         for alarm in sorted(current - previous):
             self.logger.warning("报警触发: %s", alarm)
-            self.append_debug_log(f"ALARM {alarm}")
+            self.append_debug_log(f"ALARM {alarm}", level="error")
 
         self.active_alarms = alarms
-        self.set_metric_state(self.heartRateLabel, "#98C379", hr_alarm, self.last_hr is None)
-        self.set_metric_state(self.respRateLabel, "#E5C07B", resp_alarm, self.last_resp_rate is None)
-        self.set_metric_state(self.labelSPO2Data, "#56B6C2", spo2_alarm, self.last_spo2 is None)
+        self.set_metric_state(self.heartRateLabel, COLORS["ecg"], result.hr_alarm, self.last_hr is None)
+        self.set_metric_state(self.respRateLabel, COLORS["resp"], result.resp_alarm, self.last_resp_rate is None)
+        self.set_metric_state(self.labelSPO2Data, COLORS["spo2"], result.spo2_alarm, self.last_spo2 is None)
         self.titleMetricLabel.setText("报警状态: 异常" if alarms else "报警状态: 正常")
-        self.titleMetricLabel.setStyleSheet(
-            "color: #E06C75; font-size: 22px; font-family: SimHei; font-weight: 900;"
-            if alarms else
-            "color: #98C379; font-size: 22px; font-family: SimHei; font-weight: 900;"
-        )
+        self.titleMetricLabel.setStyleSheet(alarm_title_style(bool(alarms)))
         if alarms and not self.alarm_muted:
             QApplication.beep()
         self.update_status_bar()
@@ -1033,7 +838,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             self._clear_wave_region(self.painterResp, self.mRespXStep, iCnt + 10, self.maxRespHeight)
         self._draw_wave_grid(self.painterResp, self.maxRespLength, self.maxRespHeight)
-        self.painterResp.setPen(QPen(QColor("#E5C07B"), 2, Qt.SolidLine))
+        self.painterResp.setPen(QPen(QColor(COLORS["resp"]), 2, Qt.SolidLine))
         for i in range(iCnt - 1):
             if self.adaptive_scale_enabled and self.resp_max_val != self.resp_min_val:
                 data_range = self.resp_max_val - self.resp_min_val
@@ -1078,7 +883,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             self._clear_wave_region(self.painterSPO2, self.mSPO2XStep, iCnt + 10, self.maxSPO2Height)
         self._draw_wave_grid(self.painterSPO2, self.maxSPO2Length, self.maxSPO2Height)
-        self.painterSPO2.setPen(QPen(QColor("#56B6C2"), 2, Qt.SolidLine))
+        self.painterSPO2.setPen(QPen(QColor(COLORS["spo2"]), 2, Qt.SolidLine))
         for i in range(iCnt - 1):
             if self.adaptive_scale_enabled and self.spo2_max_val != self.spo2_min_val:
                 data_range = self.spo2_max_val - self.spo2_min_val
@@ -1118,7 +923,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             self._clear_wave_region(self.painterEcg1, self.mECG1XStep, iCnt + 10, self.maxECG1Height)
         self._draw_wave_grid(self.painterEcg1, self.maxECG1Length, self.maxECG1Height)
-        self.painterEcg1.setPen(QPen(QColor("#98C379"), 2, Qt.SolidLine))
+        self.painterEcg1.setPen(QPen(QColor(COLORS["ecg"]), 2, Qt.SolidLine))
         for i in range(iCnt - 1):
             if self.adaptive_scale_enabled and self.ecg_max_val != self.ecg_min_val:
                 data_range = self.ecg_max_val - self.ecg_min_val

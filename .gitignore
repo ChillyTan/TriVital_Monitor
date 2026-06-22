@@ -1,0 +1,46 @@
+# Python cache and local environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# PyInstaller build artifacts
+build/
+dist/
+
+# Logs and local runtime data
+logs/
+*.log
+
+# IDE/editor local files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Keil/ARM build outputs and user-local settings
+*/Project/Objects/
+*/Project/Listings/
+*/Project/*.uvguix.*
+*.o
+*.d
+*.crf
+*.dep
+*.axf
+*.hex
+*.map
+*.lst
+*.htm
+*.lnp
+*.sct
+*.bak
+*.plg
+*.tra
+*.iex
+
+# OS metadata
+Thumbs.db
+.DS_Store

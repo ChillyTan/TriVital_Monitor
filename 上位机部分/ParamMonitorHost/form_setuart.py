@@ -2,7 +2,9 @@ from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtSerialPort import QSerialPortInfo
 from qfluentwidgets import ComboBox, PushButton
+
 from form_setuart_ui import Ui_FormSetUART
+from ui_theme import bold_font, uart_dialog_style
 
 
 class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
@@ -16,26 +18,18 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
         self.apply_fonts()
         self.apply_style()
         self.openUARTButton.clicked.connect(self.openUart)
-
-        if opened:
-            self.uartStsLabel.setPixmap(QtGui.QPixmap(":/new/prefix1/image/open.png"))
-            self.openUARTButton.setText("关闭串口")
-            self.openUARTButton.setEnabled(True)
-        else:
-            self.uartStsLabel.setPixmap(QtGui.QPixmap(":/new/prefix1/image/close.png"))
-            self.openUARTButton.setText("打开串口")
-
+        self.set_open_state(opened)
         self.serial_search()
 
     def apply_fluent_controls(self):
-        combo_sources = (
+        combo_names = (
             "uartNumComboBox",
             "baudRateComboBox",
             "dataBitsComboBox",
             "stopBitsComboBox",
             "parityComboBox",
         )
-        for name in combo_sources:
+        for name in combo_names:
             old_combo = getattr(self, name)
             new_combo = ComboBox(self)
             new_combo.setGeometry(old_combo.geometry())
@@ -55,8 +49,8 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
         old_button.hide()
 
     def apply_fonts(self):
-        zh_font = QtGui.QFont("SimHei", 12, 87)
-        mono_font = QtGui.QFont("DejaVu Sans Mono", 12, 87)
+        zh_font = bold_font("SimHei", 12)
+        mono_font = bold_font("DejaVu Sans Mono", 12)
 
         for widget in (
             self.uartNumLabel,
@@ -79,43 +73,14 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
 
     def apply_style(self):
         self.setWindowTitle("串口设置")
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #282C34;
-                color: #DCDFE4;
-                font-weight: 900;
-            }
-            QLabel {
-                background: transparent;
-            }
-            QComboBox {
-                background-color: #23272F;
-                border: 1px solid #3E4451;
-                border-radius: 6px;
-                padding: 5px 10px;
-                color: #DCDFE4;
-            }
-            QPushButton {
-                background-color: #2C313A;
-                border: 1px solid #61AFEF;
-                border-radius: 6px;
-                padding: 7px 12px;
-                color: #FFFFFF;
-            }
-            QPushButton:hover {
-                background-color: #3A4B5F;
-            }
-            QPushButton:disabled {
-                color: #7F848E;
-                border-color: #3E4451;
-            }
-            ComboBox, PushButton {
-                background-color: #23272F;
-                color: #DCDFE4;
-                border: 1px solid #3E4451;
-                border-radius: 6px;
-            }
-        """)
+        self.setStyleSheet(uart_dialog_style())
+
+    def set_open_state(self, opened):
+        icon_name = "open.png" if opened else "close.png"
+        button_text = "关闭串口" if opened else "打开串口"
+        self.uartStsLabel.setPixmap(QtGui.QPixmap(f":/new/prefix1/image/{icon_name}"))
+        self.openUARTButton.setText(button_text)
+        self.openUARTButton.setEnabled(True)
 
     def serial_search(self):
         ports = QSerialPortInfo.availablePorts()
