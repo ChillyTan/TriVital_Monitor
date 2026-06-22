@@ -12,7 +12,11 @@ from PyQt5 import QtGui
 from ParamMonitor_ui import Ui_MainWindow
 from form_setuart import UartSet
 import serial
+import qtawesome as qta
+import qtawesome.iconic_font as qta_iconic
 from PackUnpack import PackUnpack
+
+qta_iconic.IconicFont._install_fonts = lambda self, fonts_directory, system_wide=False: fonts_directory
 
 class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -115,28 +119,34 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
             self.logger.addHandler(handler)
 
+    def icon(self, name, color="#DCDFE4"):
+        return qta.icon(name, color=color, color_active="#FFFFFF")
+
     def setup_toolbar(self):
         self.toolbar = QtWidgets.QToolBar("监护工具", self)
         self.toolbar.setMovable(False)
-        self.toolbar.setIconSize(QtCore.QSize(20, 20))
+        self.toolbar.setIconSize(QtCore.QSize(18, 18))
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toolbar.setStyleSheet("""
             QToolBar {
                 background: #21252B;
                 border-bottom: 1px solid #3E4451;
-                spacing: 6px;
-                padding: 4px 10px;
+                spacing: 8px;
+                padding: 6px 12px;
             }
             QToolButton {
                 color: #DCDFE4;
                 background: #2C313A;
                 border: 1px solid #3E4451;
-                border-radius: 4px;
-                padding: 5px 10px;
+                border-radius: 6px;
+                padding: 6px 12px;
                 font-family: SimHei;
+                font-size: 14px;
                 font-weight: 900;
             }
             QToolButton:hover {
                 border-color: #61AFEF;
+                background: #333945;
             }
             QToolButton:checked {
                 color: #FFFFFF;
@@ -146,20 +156,20 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         """)
         self.addToolBar(Qt.TopToolBarArea, self.toolbar)
 
-        self.actionSerialToolbar = QAction("串口", self)
+        self.actionSerialToolbar = QAction(self.icon("fa5s.plug", "#61AFEF"), "串口", self)
         self.actionSerialToolbar.triggered.connect(self.slot_serialSet)
         self.toolbar.addAction(self.actionSerialToolbar)
 
-        self.actionPauseWave = QAction("暂停波形", self)
+        self.actionPauseWave = QAction(self.icon("fa5s.pause", "#E5C07B"), "暂停波形", self)
         self.actionPauseWave.setCheckable(True)
         self.actionPauseWave.triggered.connect(self.toggle_wave_pause)
         self.toolbar.addAction(self.actionPauseWave)
 
-        self.actionClearWave = QAction("清屏", self)
+        self.actionClearWave = QAction(self.icon("fa5s.eraser", "#ABB2BF"), "清屏", self)
         self.actionClearWave.triggered.connect(self.clear_wave_screen)
         self.toolbar.addAction(self.actionClearWave)
 
-        self.actionMuteAlarm = QAction("报警静音", self)
+        self.actionMuteAlarm = QAction(self.icon("fa5s.bell-slash", "#E06C75"), "报警静音", self)
         self.actionMuteAlarm.setCheckable(True)
         self.actionMuteAlarm.triggered.connect(self.toggle_alarm_mute)
         self.toolbar.addAction(self.actionMuteAlarm)
@@ -189,33 +199,35 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             }
         """)
 
-        self.actionDebugPanel = QAction("显示协议调试", self)
+        self.actionDebugPanel = QAction(self.icon("fa5s.terminal", "#56B6C2"), "显示协议调试", self)
         self.actionDebugPanel.setCheckable(True)
         self.actionDebugPanel.setChecked(True)
         self.actionDebugPanel.triggered.connect(self.toggle_debug_panel)
         self.viewMenu.addAction(self.actionDebugPanel)
 
-        self.actionDockDebugLeft = QAction("调试左侧", self)
+        self.actionDockDebugLeft = QAction(self.icon("fa5s.arrow-left", "#ABB2BF"), "调试左侧", self)
         self.actionDockDebugLeft.triggered.connect(lambda: self.dock_debug_panel(Qt.LeftDockWidgetArea))
         self.viewMenu.addAction(self.actionDockDebugLeft)
 
-        self.actionDockDebugRight = QAction("调试右侧", self)
+        self.actionDockDebugRight = QAction(self.icon("fa5s.arrow-right", "#ABB2BF"), "调试右侧", self)
         self.actionDockDebugRight.triggered.connect(lambda: self.dock_debug_panel(Qt.RightDockWidgetArea))
         self.viewMenu.addAction(self.actionDockDebugRight)
 
         self.viewToolButton = QtWidgets.QToolButton(self)
+        self.viewToolButton.setIcon(self.icon("fa5s.layer-group", "#61AFEF"))
         self.viewToolButton.setText("视图")
+        self.viewToolButton.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.viewToolButton.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.viewToolButton.setMenu(self.viewMenu)
         self.toolbar.addWidget(self.viewToolButton)
 
         self.toolbar.addSeparator()
 
-        self.actionAboutToolbar = QAction("关于", self)
+        self.actionAboutToolbar = QAction(self.icon("fa5s.info-circle", "#ABB2BF"), "关于", self)
         self.actionAboutToolbar.triggered.connect(self.slot_about)
         self.toolbar.addAction(self.actionAboutToolbar)
 
-        self.actionQuitToolbar = QAction("退出", self)
+        self.actionQuitToolbar = QAction(self.icon("fa5s.sign-out-alt", "#E06C75"), "退出", self)
         self.actionQuitToolbar.triggered.connect(self.slot_quit)
         self.toolbar.addAction(self.actionQuitToolbar)
 
@@ -366,9 +378,9 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
                 margin-top: 0px;
             }}
             QGroupBox#metricCard {{
-                background-color: #21252B;
-                border: 1px solid #3E4451;
-                border-radius: 6px;
+                background-color: #23272F;
+                border: 1px solid #414855;
+                border-radius: 8px;
             }}
             QLabel#waveTitle {{
                 color: #61AFEF;
@@ -400,9 +412,9 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
                 font-weight: 900;
             }}
             QLabel#statusText {{
-                padding: 5px 8px;
+                padding: 6px 10px;
                 border: 1px solid #98C379;
-                border-radius: 4px;
+                border-radius: 6px;
                 background-color: #223024;
                 color: #98C379;
                 font-size: 20px;
@@ -475,9 +487,9 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             group_box.setObjectName("metricCard")
             group_box.setStyleSheet("""
                 QGroupBox {
-                    background-color: #21252B;
-                    border: 1px solid #3E4451;
-                    border-radius: 6px;
+                    background-color: #23272F;
+                    border: 1px solid #414855;
+                    border-radius: 8px;
                     margin-top: 0px;
                 }
             """)
@@ -544,8 +556,8 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
                 color: #98C379;
                 background-color: #223024;
                 border: 1px solid #98C379;
-                border-radius: 4px;
-                padding: 5px 8px;
+                border-radius: 6px;
+                padding: 6px 10px;
                 font-size: 20px;
                 font-family: {zh_font_family};
                 font-weight: 900;
@@ -927,24 +939,24 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
 
         if leadecg:
             self.labelecg_status.setText("导联正常")
-            self.labelecg_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 4px; padding: 5px 8px;")
+            self.labelecg_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 6px; padding: 6px 10px;")
         else:
             self.labelecg_status.setText("导联异常")
-            self.labelecg_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 4px; padding: 5px 8px;")
+            self.labelecg_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 6px; padding: 6px 10px;")
 
         if leadresp:
             self.labelresp_status.setText("导联正常")
-            self.labelresp_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 4px; padding: 5px 8px;")
+            self.labelresp_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 6px; padding: 6px 10px;")
         else:
             self.labelresp_status.setText("导联异常")
-            self.labelresp_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 4px; padding: 5px 8px;")
+            self.labelresp_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 6px; padding: 6px 10px;")
 
         if leadspo2:
             self.labelspo2_status.setText("导联正常")
-            self.labelspo2_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 4px; padding: 5px 8px;")
+            self.labelspo2_status.setStyleSheet("color: #98C379; border: 1px solid #98C379; background-color: #223024; border-radius: 6px; padding: 6px 10px;")
         else:
             self.labelspo2_status.setText("导联异常")
-            self.labelspo2_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 4px; padding: 5px 8px;")
+            self.labelspo2_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 6px; padding: 6px 10px;")
         self.evaluate_alarms()
 
     def set_metric_state(self, label, normal_color, alarm=False, invalid=False):

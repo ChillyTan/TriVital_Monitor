@@ -1,6 +1,7 @@
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtSerialPort import QSerialPortInfo
+from qfluentwidgets import ComboBox, PushButton
 from form_setuart_ui import Ui_FormSetUART
 
 
@@ -10,6 +11,7 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
     def __init__(self, opened):
         super(UartSet, self).__init__()
         self.setupUi(self)
+        self.apply_fluent_controls()
         self.port_names = []
         self.apply_fonts()
         self.apply_style()
@@ -24,6 +26,33 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
             self.openUARTButton.setText("打开串口")
 
         self.serial_search()
+
+    def apply_fluent_controls(self):
+        combo_sources = (
+            "uartNumComboBox",
+            "baudRateComboBox",
+            "dataBitsComboBox",
+            "stopBitsComboBox",
+            "parityComboBox",
+        )
+        for name in combo_sources:
+            old_combo = getattr(self, name)
+            new_combo = ComboBox(self)
+            new_combo.setGeometry(old_combo.geometry())
+            new_combo.setObjectName(old_combo.objectName())
+            new_combo.setFont(old_combo.font())
+            for index in range(old_combo.count()):
+                new_combo.addItem(old_combo.itemText(index))
+            new_combo.setCurrentIndex(old_combo.currentIndex())
+            old_combo.hide()
+            setattr(self, name, new_combo)
+
+        old_button = self.openUARTButton
+        self.openUARTButton = PushButton(old_button.text(), self)
+        self.openUARTButton.setGeometry(old_button.geometry())
+        self.openUARTButton.setObjectName(old_button.objectName())
+        self.openUARTButton.setFont(old_button.font())
+        old_button.hide()
 
     def apply_fonts(self):
         zh_font = QtGui.QFont("SimHei", 12, 87)
@@ -60,22 +89,31 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
                 background: transparent;
             }
             QComboBox {
-                background-color: #1E2127;
+                background-color: #23272F;
                 border: 1px solid #3E4451;
-                border-radius: 4px;
-                padding: 4px 8px;
+                border-radius: 6px;
+                padding: 5px 10px;
                 color: #DCDFE4;
             }
             QPushButton {
-                background-color: #3B4048;
+                background-color: #2C313A;
                 border: 1px solid #61AFEF;
-                border-radius: 4px;
-                padding: 6px 12px;
+                border-radius: 6px;
+                padding: 7px 12px;
                 color: #FFFFFF;
+            }
+            QPushButton:hover {
+                background-color: #3A4B5F;
             }
             QPushButton:disabled {
                 color: #7F848E;
                 border-color: #3E4451;
+            }
+            ComboBox, PushButton {
+                background-color: #23272F;
+                color: #DCDFE4;
+                border: 1px solid #3E4451;
+                border-radius: 6px;
             }
         """)
 
