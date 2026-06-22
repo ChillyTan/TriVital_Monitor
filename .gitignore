@@ -25,6 +25,8 @@ logs/
 */Project/Objects/
 */Project/Listings/
 */Project/*.uvguix.*
+*/Project/*.uvoptx.*
+*/Project/*.uvprojx.*
 *.o
 *.d
 *.crf
