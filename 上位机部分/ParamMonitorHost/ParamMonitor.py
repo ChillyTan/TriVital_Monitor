@@ -1,6 +1,9 @@
 ﻿
 import sys
 import copy
+import logging
+import os
+import time
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import QTimer, Qt, QRect, QPoint
 from PyQt5.QtGui import QStatusTipEvent, QPixmap, QPainter, QPen, QColor, QIcon
@@ -16,7 +19,6 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         super(ParamMonitor, self).__init__()
         self.setupUi(self)
         self.setup_responsive_ui()
-        self.init()
         self.ser = serial.Serial()
         self.mPackUnpck = PackUnpack()
         self.mPackAfterUnpackArr = []
@@ -44,6 +46,31 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.sync_error_count = 0
         self.sync_error_threshold = 5
         self.heart_icon_visible = True
+        self.wave_paused = False
+        self.debug_visible = True
+        self.alarm_muted = False
+        self.active_alarms = []
+        self.last_hr = None
+        self.last_resp_rate = None
+        self.last_spo2 = None
+        self.lead_status = {"ECG": None, "RESP": None, "SpO2": None}
+        self.rx_bytes = 0
+        self.rx_packets = 0
+        self.checksum_error_count = 0
+        self.packet_counts = {0x10: 0, 0x11: 0, 0x12: 0}
+        self.start_time = time.time()
+        self.last_packet_time = None
+        self.current_port_label = "未连接"
+        self.current_baudrate = ""
+        self.alarm_limits = {
+            "HR_LOW": 50,
+            "HR_HIGH": 120,
+            "RESP_LOW": 8,
+            "RESP_HIGH": 30,
+            "SPO2_LOW": 90,
+        }
+        self.setup_logger()
+        self.init()
 
     def init(self):
         self.menu1 = QAction(self)
@@ -60,13 +87,148 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         self.menu5.triggered.connect(self.slot_quit)
         self.statusStr = '等待连接串口'
         self.statusBar().showMessage(self.statusStr)
+        self.setup_toolbar()
+        self.setup_debug_dock()
         self.serialPortTimer = QTimer(self)
         self.serialPortTimer.timeout.connect(self.data_receive)
         self.procDataTimer = QTimer(self)
         self.procDataTimer.timeout.connect(self.data_process)
+        self.statusTimer = QTimer(self)
+        self.statusTimer.timeout.connect(self.update_status_bar)
+        self.statusTimer.start(500)
         self.heartShapeTimer = QTimer(self)
         self.heartShapeTimer.timeout.connect(self.heartShapeFlash)
         self.heartShapeTimer.start(1000)
+        self.update_status_bar()
+
+    def setup_logger(self):
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "host_monitor.log")
+        self.logger = logging.getLogger("TriVitalMonitor")
+        self.logger.setLevel(logging.INFO)
+        if not self.logger.handlers:
+            handler = logging.FileHandler(log_path, encoding="utf-8")
+            handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+            self.logger.addHandler(handler)
+
+    def setup_toolbar(self):
+        self.toolbar = QtWidgets.QToolBar("监护工具", self)
+        self.toolbar.setMovable(False)
+        self.toolbar.setIconSize(QtCore.QSize(20, 20))
+        self.toolbar.setStyleSheet("""
+            QToolBar {
+                background: #21252B;
+                border-bottom: 1px solid #3E4451;
+                spacing: 6px;
+                padding: 4px 10px;
+            }
+            QToolButton {
+                color: #DCDFE4;
+                background: #2C313A;
+                border: 1px solid #3E4451;
+                border-radius: 4px;
+                padding: 5px 10px;
+                font-family: SimHei;
+                font-weight: 900;
+            }
+            QToolButton:hover {
+                border-color: #61AFEF;
+            }
+            QToolButton:checked {
+                color: #FFFFFF;
+                background: #3A4B5F;
+                border-color: #61AFEF;
+            }
+        """)
+        self.addToolBar(Qt.TopToolBarArea, self.toolbar)
+
+        self.actionSerialToolbar = QAction("串口", self)
+        self.actionSerialToolbar.triggered.connect(self.slot_serialSet)
+        self.toolbar.addAction(self.actionSerialToolbar)
+
+        self.actionPauseWave = QAction("暂停波形", self)
+        self.actionPauseWave.setCheckable(True)
+        self.actionPauseWave.triggered.connect(self.toggle_wave_pause)
+        self.toolbar.addAction(self.actionPauseWave)
+
+        self.actionClearWave = QAction("清屏", self)
+        self.actionClearWave.triggered.connect(self.clear_wave_screen)
+        self.toolbar.addAction(self.actionClearWave)
+
+        self.actionMuteAlarm = QAction("报警静音", self)
+        self.actionMuteAlarm.setCheckable(True)
+        self.actionMuteAlarm.triggered.connect(self.toggle_alarm_mute)
+        self.toolbar.addAction(self.actionMuteAlarm)
+
+        self.actionDebugPanel = QAction("协议调试", self)
+        self.actionDebugPanel.setCheckable(True)
+        self.actionDebugPanel.setChecked(True)
+        self.actionDebugPanel.triggered.connect(self.toggle_debug_panel)
+        self.toolbar.addAction(self.actionDebugPanel)
+
+    def setup_debug_dock(self):
+        self.debugDock = QtWidgets.QDockWidget("协议调试", self)
+        self.debugDock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea)
+        debug_widget = QtWidgets.QWidget()
+        debug_layout = QtWidgets.QVBoxLayout(debug_widget)
+        debug_layout.setContentsMargins(8, 8, 8, 8)
+        debug_layout.setSpacing(6)
+
+        self.protocolStatsLabel = QtWidgets.QLabel()
+        self.protocolStatsLabel.setStyleSheet("color: #ABB2BF; font-family: JetBrains Mono; font-size: 12px;")
+        self.debugTextEdit = QtWidgets.QPlainTextEdit()
+        self.debugTextEdit.setReadOnly(True)
+        self.debugTextEdit.setMaximumBlockCount(300)
+        self.debugTextEdit.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1E2127;
+                color: #DCDFE4;
+                border: 1px solid #3E4451;
+                font-family: JetBrains Mono;
+                font-size: 12px;
+            }
+        """)
+        debug_layout.addWidget(self.protocolStatsLabel)
+        debug_layout.addWidget(self.debugTextEdit, 1)
+        self.debugDock.setWidget(debug_widget)
+        self.debugDock.setStyleSheet("""
+            QDockWidget {
+                background: #21252B;
+                color: #DCDFE4;
+                font-family: SimHei;
+                font-weight: 900;
+            }
+        """)
+        self.debugDock.visibilityChanged.connect(self.actionDebugPanel.setChecked)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.debugDock)
+
+    def append_debug_log(self, text):
+        if hasattr(self, "debugTextEdit"):
+            timestamp = time.strftime("%H:%M:%S")
+            self.debugTextEdit.appendPlainText(f"{timestamp} {text}")
+
+    def update_protocol_stats(self):
+        if not hasattr(self, "protocolStatsLabel"):
+            return
+        self.protocolStatsLabel.setText(
+            f"RX {self.rx_bytes} B | PACK {self.rx_packets} | "
+            f"WAVE {self.packet_counts[0x10]} PARAM {self.packet_counts[0x11]} "
+            f"STATUS {self.packet_counts[0x12]} | ERR {self.checksum_error_count}"
+        )
+
+    def update_status_bar(self):
+        elapsed = int(time.time() - self.start_time)
+        alarm_text = "正常" if not self.active_alarms else "报警: " + " / ".join(self.active_alarms[:3])
+        paused_text = "暂停" if self.wave_paused else "运行"
+        mute_text = "静音" if self.alarm_muted else "响铃"
+        self.statusStr = (
+            f"串口 {self.current_port_label} {self.current_baudrate} | "
+            f"RX {self.rx_bytes}B 包 {self.rx_packets} 错 {self.checksum_error_count} | "
+            f"波形 {paused_text} | 报警 {mute_text} {alarm_text} | 运行 {elapsed}s"
+        )
+        self.statusBar().showMessage(self.statusStr)
+        self.update_protocol_stats()
 
     def setup_responsive_ui(self):
         self.setWindowTitle("TriVital Monitor")
@@ -463,6 +625,31 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         if hasattr(self, 'pixmapResp'):
             self.create_wave_pixmaps()
 
+    def toggle_wave_pause(self, checked):
+        self.wave_paused = checked
+        self.actionPauseWave.setText("继续波形" if checked else "暂停波形")
+        self.append_debug_log("WAVE PAUSE" if checked else "WAVE RESUME")
+        self.update_status_bar()
+
+    def toggle_alarm_mute(self, checked):
+        self.alarm_muted = checked
+        self.actionMuteAlarm.setText("取消静音" if checked else "报警静音")
+        self.append_debug_log("ALARM MUTE ON" if checked else "ALARM MUTE OFF")
+        self.update_status_bar()
+
+    def toggle_debug_panel(self, checked):
+        self.debug_visible = checked
+        self.debugDock.setVisible(checked)
+
+    def clear_wave_screen(self):
+        self.clearData()
+        self.mRespXStep = 0
+        self.mSPO2XStep = 0
+        self.mECG1XStep = 0
+        self.create_wave_pixmaps()
+        self.append_debug_log("WAVE CLEAR")
+        self.update_status_bar()
+
     def slot_serialSet(self):
         if self.ser.isOpen():
             self.uartset = UartSet(True)
@@ -473,14 +660,7 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def slot_serial(self, portNum, baudRate, dataBits, stopBits, parity):
         if self.ser.isOpen():
-            self.serialPortTimer.stop()
-            self.procDataTimer.stop()
-            try:
-                self.ser.close()
-            except:
-                pass
-            self.statusStr = "等待连接串口"
-            self.statusBar().showMessage(self.statusStr)
+            self.disconnect_serial("手动断开串口")
         else:
             self.ser.port = portNum
             self.ser.baudrate = int(baudRate)
@@ -489,39 +669,59 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             self.ser.parity = parity
             try:
                 self.ser.open()
-            except:
-                QMessageBox.critical(self, "Error", "串口打开失败")
+            except Exception as exc:
+                self.logger.exception("串口打开失败: %s", portNum)
+                QMessageBox.critical(self, "串口错误", f"串口打开失败: {exc}")
                 return
+            self.current_port_label = portNum
+            self.current_baudrate = str(baudRate)
             self.statusStr = "连接成功"
-            self.statusBar().showMessage(self.statusStr)
+            self.logger.info("串口连接成功: %s %s", portNum, baudRate)
+            self.append_debug_log(f"OPEN {portNum} {baudRate},{dataBits},{parity},{stopBits}")
             self.serialPortTimer.start(2)
             self.procDataTimer.start(10)
+            self.update_status_bar()
+
+    def disconnect_serial(self, reason):
+        self.serialPortTimer.stop()
+        self.procDataTimer.stop()
+        try:
+            if self.ser.isOpen():
+                self.ser.close()
+        except Exception as exc:
+            self.logger.warning("关闭串口异常: %s", exc)
+        self.current_port_label = "未连接"
+        self.current_baudrate = ""
+        self.statusStr = "等待连接串口"
+        self.append_debug_log(f"CLOSE {reason}")
+        self.logger.info("串口断开: %s", reason)
+        self.update_status_bar()
 
     def data_send(self, data):
         if self.ser.isOpen():
             data = bytes(data)
             self.ser.write(data)
         else:
-            pass
+            self.append_debug_log("TX ignored: serial closed")
 
     def data_receive(self):
         try:
             num = self.ser.inWaiting()
-        except:
-            self.serialPortTimer.stop()
-            self.procDataTimer.stop()
-            try:
-                self.ser.close()
-            except:
-                pass
+        except Exception as exc:
+            self.logger.warning("串口读取失败: %s", exc)
+            self.disconnect_serial("串口读取失败")
+            QMessageBox.warning(self, "串口断开", f"串口读取失败，已断开连接: {exc}")
             return None
         if num > 0:
             data = self.ser.read(num)
+            self.rx_bytes += len(data)
+            self.append_debug_log("RX " + " ".join(f"{byte:02X}" for byte in data[:32]) + (" ..." if len(data) > 32 else ""))
             for i in range(0, len(data)):
                 byte = data[i]
                 if self.mPackUnpck.sGotPackId:
                     if byte < 0x80 and self.mPackUnpck.sPackLen < 10:
                         self.sync_error_count += 1
+                        self.checksum_error_count += 1
                         self.mPackUnpck.sGotPackId = False
                         self.mPackUnpck.sPackLen = 0
                         self.mPackUnpck.sRestByteNum = 0
@@ -537,6 +737,9 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
                     self.sync_error_count = 0
                     temp = self.mPackUnpck.getUnpackRslt()
                     self.mPackAfterUnpackArr.append(copy.deepcopy(temp))
+                    self.rx_packets += 1
+                    self.last_packet_time = time.time()
+                    self.append_debug_log("PACK " + " ".join(f"{value:02X}" for value in temp[:8]))
                 elif byte < 0x80 and not self.mPackUnpck.sGotPackId:
                     pass
         else:
@@ -550,6 +753,8 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
             for i in range(num):
                 packet = self.mPackAfterUnpackArr[i]
                 module_id = packet[0]
+                if module_id in self.packet_counts:
+                    self.packet_counts[module_id] += 1
 
                 if module_id == 0x10:
                     self.analyzeWaveData(packet)
@@ -558,6 +763,8 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
                 elif module_id == 0x12:
                     self.analyzeStatusData(packet)
             del self.mPackAfterUnpackArr[0:num]
+        if self.wave_paused:
+            return
         if len(self.mRespWaveList) > 2:
             self.drawRespWave()
         if len(self.mSPO2WaveList) > 2:
@@ -599,18 +806,24 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         spo2_value = (data[6] << 8) | data[7]
 
         if 0 < hr < 300:
+            self.last_hr = hr
             self.heartRateLabel.setText(str(hr))
         else:
+            self.last_hr = None
             self.heartRateLabel.setText("---")
         if 0 < resp_rate < 120:
+            self.last_resp_rate = resp_rate
             self.respRateLabel.setText(str(resp_rate))
         else:
+            self.last_resp_rate = None
             self.respRateLabel.setText("---")
         if 0 <= spo2_value <= 100:
+            self.last_spo2 = spo2_value
             self.labelSPO2Data.setText(str(spo2_value))
         else:
+            self.last_spo2 = None
             self.labelSPO2Data.setText("---")
-        # ========================================================
+        self.evaluate_alarms()
 
     def analyzeStatusData(self, data):
         ecg_lead_status = data[2]
@@ -621,6 +834,9 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
 
         spo2_lead_status = data[6]
         leadspo2 = spo2_lead_status
+        self.lead_status["ECG"] = bool(leadecg)
+        self.lead_status["RESP"] = bool(leadresp)
+        self.lead_status["SpO2"] = bool(leadspo2)
 
         if leadecg:
             self.labelecg_status.setText("导联正常")
@@ -642,6 +858,66 @@ class ParamMonitor(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             self.labelspo2_status.setText("导联异常")
             self.labelspo2_status.setStyleSheet("color: #E06C75; border: 1px solid #E06C75; background-color: #3A2228; border-radius: 4px; padding: 5px 8px;")
+        self.evaluate_alarms()
+
+    def set_metric_state(self, label, normal_color, alarm=False, invalid=False):
+        if invalid:
+            color = "#7F848E"
+        elif alarm:
+            color = "#E06C75"
+        else:
+            color = normal_color
+        label.setStyleSheet(f"color: {color}; background: transparent;")
+
+    def evaluate_alarms(self):
+        alarms = []
+        hr_alarm = False
+        resp_alarm = False
+        spo2_alarm = False
+
+        if self.last_hr is not None:
+            if self.last_hr < self.alarm_limits["HR_LOW"]:
+                alarms.append(f"心率过低 {self.last_hr}")
+                hr_alarm = True
+            elif self.last_hr > self.alarm_limits["HR_HIGH"]:
+                alarms.append(f"心率过高 {self.last_hr}")
+                hr_alarm = True
+
+        if self.last_resp_rate is not None:
+            if self.last_resp_rate < self.alarm_limits["RESP_LOW"]:
+                alarms.append(f"呼吸过低 {self.last_resp_rate}")
+                resp_alarm = True
+            elif self.last_resp_rate > self.alarm_limits["RESP_HIGH"]:
+                alarms.append(f"呼吸过高 {self.last_resp_rate}")
+                resp_alarm = True
+
+        if self.last_spo2 is not None and self.last_spo2 < self.alarm_limits["SPO2_LOW"]:
+            alarms.append(f"血氧过低 {self.last_spo2}%")
+            spo2_alarm = True
+
+        for name, ok in self.lead_status.items():
+            if ok is False:
+                alarms.append(f"{name}导联异常")
+
+        previous = set(self.active_alarms)
+        current = set(alarms)
+        for alarm in sorted(current - previous):
+            self.logger.warning("报警触发: %s", alarm)
+            self.append_debug_log(f"ALARM {alarm}")
+
+        self.active_alarms = alarms
+        self.set_metric_state(self.heartRateLabel, "#98C379", hr_alarm, self.last_hr is None)
+        self.set_metric_state(self.respRateLabel, "#E5C07B", resp_alarm, self.last_resp_rate is None)
+        self.set_metric_state(self.labelSPO2Data, "#56B6C2", spo2_alarm, self.last_spo2 is None)
+        self.titleMetricLabel.setText("报警" if alarms else "实时监护")
+        self.titleMetricLabel.setStyleSheet(
+            "color: #E06C75; font-size: 32px; font-family: SimHei; font-weight: 900;"
+            if alarms else
+            "color: #98C379; font-size: 32px; font-family: SimHei; font-weight: 900;"
+        )
+        if alarms and not self.alarm_muted:
+            QApplication.beep()
+        self.update_status_bar()
 
     def drawRespWave(self):
         iCnt = len(self.mRespWaveList)

@@ -1,35 +1,28 @@
-# *_* coding : UTF-8 *_*
-# 开发团队 ：乐育科技
-# 开发人员 ：zcq
-# 开发时间 ：2022/6/14 18:17
-# 文件名称 ：form_setuart.PY 
-# 开发工具 ：PyCharm
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QApplication
-from form_setuart_ui import Ui_FormSetUART
-import serial
-# 获取所有串口信息
-import serial.tools.list_ports
 from PyQt5.QtSerialPort import QSerialPortInfo
+from form_setuart_ui import Ui_FormSetUART
 
 
 class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
-    # 自定义信号
     serialSignal = pyqtSignal(str, str, str, str, str)
 
-    def __init__(self, flag):
+    def __init__(self, opened):
         super(UartSet, self).__init__()
         self.setupUi(self)
+        self.port_names = []
         self.apply_fonts()
-        # 设置串口打开标志图片
-        if flag:
+        self.apply_style()
+        self.openUARTButton.clicked.connect(self.openUart)
+
+        if opened:
             self.uartStsLabel.setPixmap(QtGui.QPixmap(":/new/prefix1/image/open.png"))
             self.openUARTButton.setText("关闭串口")
+            self.openUARTButton.setEnabled(True)
         else:
             self.uartStsLabel.setPixmap(QtGui.QPixmap(":/new/prefix1/image/close.png"))
             self.openUARTButton.setText("打开串口")
-        self.init()
+
         self.serial_search()
 
     def apply_fonts(self):
@@ -55,25 +48,68 @@ class UartSet(QtWidgets.QWidget, Ui_FormSetUART):
         ):
             widget.setFont(mono_font)
 
-    def init(self):
-        # 关联槽函数
-        self.openUARTButton.clicked.connect(self.openUart)
+    def apply_style(self):
+        self.setWindowTitle("串口设置")
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #282C34;
+                color: #DCDFE4;
+                font-weight: 900;
+            }
+            QLabel {
+                background: transparent;
+            }
+            QComboBox {
+                background-color: #1E2127;
+                border: 1px solid #3E4451;
+                border-radius: 4px;
+                padding: 4px 8px;
+                color: #DCDFE4;
+            }
+            QPushButton {
+                background-color: #3B4048;
+                border: 1px solid #61AFEF;
+                border-radius: 4px;
+                padding: 6px 12px;
+                color: #FFFFFF;
+            }
+            QPushButton:disabled {
+                color: #7F848E;
+                border-color: #3E4451;
+            }
+        """)
 
-    # 搜索串口号
     def serial_search(self):
-        port_lsit = QSerialPortInfo.availablePorts()  # 获取有效的串口号
-        # 将有效的串口号添加到串口选择下拉列表中
-        if len(port_lsit) >= 1:
-            self.uartNumComboBox.clear()
-            for i in port_lsit:
-                self.uartNumComboBox.addItem(i.portName())
+        ports = QSerialPortInfo.availablePorts()
+        self.uartNumComboBox.clear()
+        self.port_names = []
 
-    # “打开串口”按钮单击信号的槽函数
+        if not ports:
+            self.uartNumComboBox.addItem("未检测到串口")
+            self.openUARTButton.setEnabled(False)
+            return
+
+        for port in ports:
+            port_name = port.portName()
+            description = port.description()
+            display_name = port_name if not description else f"{port_name} - {description}"
+            self.port_names.append(port_name)
+            self.uartNumComboBox.addItem(display_name)
+
+        self.openUARTButton.setEnabled(True)
+
     def openUart(self):
-        self.serialSignal.emit(self.uartNumComboBox.currentText(),
-                               self.baudRateComboBox.currentText(),
-                               self.dataBitsComboBox.currentText(),
-                               self.stopBitsComboBox.currentText(),
-                               self.parityComboBox.currentText())
-        self.close() 
- 
+        if not self.port_names:
+            QtWidgets.QMessageBox.warning(self, "串口设置", "未检测到可用串口")
+            return
+
+        index = self.uartNumComboBox.currentIndex()
+        port_name = self.port_names[index] if 0 <= index < len(self.port_names) else self.uartNumComboBox.currentText()
+        self.serialSignal.emit(
+            port_name,
+            self.baudRateComboBox.currentText(),
+            self.dataBitsComboBox.currentText(),
+            self.stopBitsComboBox.currentText(),
+            self.parityComboBox.currentText(),
+        )
+        self.close()
